@@ -1,0 +1,50 @@
+[build-system]
+requires = ["flit_core >=3.2,<4"]
+build-backend = "flit_core.buildapi"
+
+[tool.flit.module]
+name = "dyson_orca_tools"
+
+[project]
+name = "dyson_orca_tools"
+dynamic = ["version", "description"]
+readme = "README.md"
+# license = {file = 'LICENSE.txt'}
+classifiers = [
+    "Development Status :: 1 - Planning",
+    "License :: OSI Approved :: MIT License",
+    "Operating System :: POSIX :: Linux",
+    "Operating System :: MacOS :: MacOS X",
+    "Programming Language :: Python :: 3",
+]
+requires-python = ">=3.10"
+dependencies = [
+    "typer",
+]
+
+[project.optional-dependencies]
+dev = [
+  "bumpver==2023.1129",
+  "pre-commit==3.6.0",
+
+]
+
+[project.scripts]
+dyson_orca_tools = 'dyson_orca_tools.cli.main:app'
+
+[tool.bumpver]
+current_version = "v0.0.1"
+version_pattern = "vMAJOR.MINOR.PATCH[PYTAGNUM]"
+commit_message = "Bump version {old_version} -> {new_version}."
+tag_message = "Release {new_version}."
+tag_scope = "default"
+pre_commit_hook = ""
+post_commit_hook = ""
+commit = true
+tag = true
+push = true
+
+[tool.bumpver.file_patterns]
+"cubehandler/version.py" = [
+    '__version__ = "{pep440_version}"',
+]
