@@ -3,6 +3,7 @@ from pathlib import Path
 
 
 from ..utils import validate_json_file, sannity_check
+from ..dyson import Dyson
 
 app = typer.Typer(help="Compute Dyson orbitals from ORCA CASCI/CASSCF JSON outputs.")
 
@@ -38,10 +39,10 @@ def compute_dyson_orbital(
     # Create the output directory if it doesn't exist
     output_dir.mkdir(parents=True, exist_ok=True)
 
-    # Load the JSON files , temporarily disable
+    # Load the JSON files
     initial_wfn_data = validate_json_file(initial_wfn, "Initial")
     final_wfn_data = validate_json_file(final_wfn, "Final")
-    parameters_data = validate_json_file(parameters, "Parameters")  # noqa: F841
+    parameters_data = validate_json_file(parameters, "Parameters")
     typer.secho("✅ Input files are valid JSONs.", fg=typer.colors.GREEN)
 
     # Perform sanity checks on the JSON data
@@ -51,6 +52,8 @@ def compute_dyson_orbital(
     typer.secho("🔄 Computing Dyson orbitals...", fg=typer.colors.BLUE)
 
     # Our algorithm to compute the Dyson orbitals goes here
+
+    dyson = Dyson(initial_wfn_data, final_wfn_data, parameters_data)  # noqa: F841
 
     typer.secho("🚀 Dyson orbital computed successfully!", fg=typer.colors.CYAN)
 
