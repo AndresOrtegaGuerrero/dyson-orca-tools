@@ -5,10 +5,11 @@ import numpy as np
 
 
 class Dyson:
-    def __init__(self, initial: dict, final: dict, parameters: dict):
+    def __init__(self, initial: dict, final: dict, parameters: dict, output_dir: str):
         self.initial = initial
         self.final = final
         self.parameters = parameters
+        self.output_dir = output_dir
         self.pyscf_molecule = self.create_pyscf_molecule()
         self.pyscf_ao_labels = self.get_pyscf_ao_labels()
         self.orca_ao_labels = self.get_orca_ao_labels()
@@ -23,6 +24,13 @@ class Dyson:
 
         # MO-MO overlap
         self.s_matrix_mo = self.get_s_matrix_mo()
+
+        # Info system
+        self.num_inactive_orbs = sum(
+            orb["Occupancy"] == 2.0
+            for orb in self.initial["Molecule"]["MolecularOrbitals"]["MOs"]
+        )
+        self.num_active_orbs = self.parameters["parameters"]["initial"]["nelc"]
 
     def get_s_matrix_ao(self, state: dict):
         """Get the overlap matrix in the AO basis."""
@@ -50,6 +58,48 @@ class Dyson:
         """Get the CI coefficients for the given state."""
         spin_ci = self.parameters["parameters"][state]["spin_ci"]
         return {k.strip("[]"): v for k, v in spin_ci.items()}  # Remove the brackets
+
+    def ci_vector_to_array(self, vector: str) -> list:
+        """Convert CI dict with keys like '[2200]', '[udud]' into lists of 0/1 for alpha/beta occupation."""
+        spin_map = {"2": [1, 1], "u": [1, 0], "d": [0, 1], "0": [0, 0]}
+
+        return [bit for c in vector for bit in spin_map[c]]
+
+    def occupation_diff(self, sd_f, sd_i):
+        """Compute the difference between two Slater determinants convert to 0 1 occupation."""
+        occ_f = np.array(list(self.ci_vector_to_array(sd_f))).astype(int)
+        occ_i = np.array(list(self.ci_vector_to_array(sd_i))).astype(int)
+        diff = occ_f - occ_i
+        if np.count_nonzero(diff) == 1 and np.sum(diff) == 1:
+            idx = np.where(diff == 1)[0][0]
+            sign = (-1) ** np.sum(occ_i[:idx])
+            return idx, sign
+        return None, None
+
+    def dyson_coeffiecients(self):
+        dyson_coeff = np.zeros(2 * self.parameters["parameters"]["initial"]["nelc"])
+        for sd_i, ci_i in self.CI_initial.items():
+            for sd_f, ci_f in self.CI_final.items():
+                idx, sign = self.occupation_diff(sd_f, sd_i)
+                if idx is not None:
+                    dyson_coeff[idx] += sign * ci_i * ci_f
+        print(dyson_coeff)
+        dyson_ao = np.zeros(self.s_matrix_ao.shape[0])
+        for i in range(self.num_active_orbs):
+            coeff = dyson_coeff[2 * i] + dyson_coeff[2 * i + 1]  # alpha + beta
+            mo_index = self.num_inactive_orbs + i
+
+            dyson_ao += coeff * self.MO_coeff_initial[:, mo_index]
+
+        return dyson_ao
+
+    def dyson_orbital(self):
+        """Compute the Dyson orbital."""
+
+        dyson_ao = self.dyson_coeffiecients()
+
+        filename = f"{self.output_dir}/dyson_orbital.cube"
+        self.cubefile_from_moeff(dyson_ao, filename)
 
     def create_pyscf_molecule(self):
         """Convert the initial wavefunction data to PySCF molecule object."""
@@ -85,5 +135,4 @@ class Dyson:
         # Reorder the MO coefficients to match the PySCF AO labels
         for idx in self.pyscf_ao_labels:
             mo_pyscf_coeff.append(moeff[self.orca_ao_labels.index(idx)])
-
-        cubegen.density(self.pyscf_molecule, filename, mo_pyscf_coeff)
+        cubegen.orbital(self.pyscf_molecule, filename, mo_pyscf_coeff)

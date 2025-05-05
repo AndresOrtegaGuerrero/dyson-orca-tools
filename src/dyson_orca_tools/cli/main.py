@@ -53,7 +53,8 @@ def compute_dyson_orbital(
 
     # Our algorithm to compute the Dyson orbitals goes here
 
-    dyson = Dyson(initial_wfn_data, final_wfn_data, parameters_data)  # noqa: F841
+    dyson = Dyson(initial_wfn_data, final_wfn_data, parameters_data, output_dir)  # noqa: F841
+    dyson.dyson_orbital()
 
     typer.secho("🚀 Dyson orbital computed successfully!", fg=typer.colors.CYAN)
 
