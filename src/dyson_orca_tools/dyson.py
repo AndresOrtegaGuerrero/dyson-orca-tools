@@ -30,7 +30,7 @@ class Dyson:
             orb["Occupancy"] == 2.0
             for orb in self.initial["Molecule"]["MolecularOrbitals"]["MOs"]
         )
-        self.num_active_orbs = self.parameters["parameters"]["initial"]["nelc"]
+        self.num_active_orbs = self.parameters["parameters"]["initial"]["norb"]
 
     def get_s_matrix_ao(self, state: dict):
         """Get the overlap matrix in the AO basis."""
@@ -43,16 +43,18 @@ class Dyson:
 
     def get_s_matrix_mo(self):
         # Determine left and right based on charge
-        charge_initial = self.initial["Molecule"]["Charge"]
-        charge_final = self.final["Molecule"]["Charge"]
+        # charge_initial = self.initial["Molecule"]["Charge"]
+        # charge_final = self.final["Molecule"]["Charge"]
 
-        C_left, C_right = (
-            (self.MO_coeff_final, self.MO_coeff_initial)
-            if charge_initial > charge_final
-            else (self.MO_coeff_initial, self.MO_coeff_final)
-        )
+        # C_left, C_right = (
+        #    (self.MO_coeff_final, self.MO_coeff_initial)
+        #    if charge_initial > charge_final
+        #    else (self.MO_coeff_initial, self.MO_coeff_final)
+        # )
 
-        return C_left.T @ self.s_matrix_ao @ C_right
+        # return C_left.T @ self.s_matrix_ao @ C_right
+
+        return self.MO_coeff_initial.T @ self.s_matrix_ao @ self.MO_coeff_final
 
     def get_ci_coeff(self, state: str) -> dict:
         """Get the CI coefficients for the given state."""
@@ -70,10 +72,18 @@ class Dyson:
         occ_f = np.array(list(self.ci_vector_to_array(sd_f))).astype(int)
         occ_i = np.array(list(self.ci_vector_to_array(sd_i))).astype(int)
         diff = occ_f - occ_i
-        if np.count_nonzero(diff) == 1 and np.sum(diff) == 1:
-            idx = np.where(diff == 1)[0][0]
-            sign = (-1) ** np.sum(occ_i[:idx])
-            return idx, sign
+        if np.count_nonzero(diff) == 1:
+            if np.sum(diff) == 1:
+                # Electron added in final state
+                idx = np.where(diff == 1)[0][0]
+                sign = (-1) ** np.sum(occ_i[:idx])
+                return idx, sign
+            elif np.sum(diff) == -1:
+                # Electron removed in final state
+                idx = np.where(diff == -1)[0][0]
+                sign = (-1) ** np.sum(occ_i[:idx])
+                return idx, sign
+
         return None, None
 
     def dyson_coeffiecients(self):
