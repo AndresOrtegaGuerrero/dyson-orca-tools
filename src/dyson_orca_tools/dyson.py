@@ -32,6 +32,11 @@ class Dyson:
         )
         self.num_active_orbs = self.parameters["parameters"]["initial"]["norb"]
 
+        self.add_or_remove = (
+            self.parameters["parameters"]["initial"]["nelc"]
+            - self.parameters["parameters"]["final"]["nelc"]
+        )
+
     def get_s_matrix_ao(self, state: dict):
         """Get the overlap matrix in the AO basis."""
         return np.column_stack(state["Molecule"]["S-Matrix"])
@@ -99,7 +104,10 @@ class Dyson:
             coeff = dyson_coeff[2 * i] + dyson_coeff[2 * i + 1]  # alpha + beta
             mo_index = self.num_inactive_orbs + i
 
-            dyson_ao += coeff * self.MO_coeff_initial[:, mo_index]
+            mo_coeff = (
+                self.MO_coeff_final if self.add_or_remove < 0 else self.MO_coeff_initial
+            )
+            dyson_ao += coeff * mo_coeff[:, mo_index]
 
         return dyson_ao
 
