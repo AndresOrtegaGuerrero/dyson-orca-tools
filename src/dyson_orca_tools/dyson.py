@@ -92,7 +92,7 @@ class Dyson:
         return None, None
 
     def dyson_coeffiecients(self):
-        dyson_coeff = np.zeros(2 * self.parameters["parameters"]["initial"]["nelc"])
+        dyson_coeff = np.zeros(2 * self.parameters["parameters"]["initial"]["norb"])
         for sd_i, ci_i in self.CI_initial.items():
             for sd_f, ci_f in self.CI_final.items():
                 idx, sign = self.occupation_diff(sd_f, sd_i)
