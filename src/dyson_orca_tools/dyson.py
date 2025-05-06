@@ -91,7 +91,7 @@ class Dyson:
 
         return None, None
 
-    def dyson_coeffiecients(self):
+    def dyson_coefficients(self):
         dyson_coeff = np.zeros(2 * self.parameters["parameters"]["initial"]["norb"])
         for sd_i, ci_i in self.CI_initial.items():
             for sd_f, ci_f in self.CI_final.items():
@@ -114,7 +114,7 @@ class Dyson:
     def dyson_orbital(self):
         """Compute the Dyson orbital."""
 
-        dyson_ao = self.dyson_coeffiecients()
+        dyson_ao = self.dyson_coefficients()
 
         filename = f"{self.output_dir}/dyson_orbital.cube"
         self.cubefile_from_moeff(dyson_ao, filename)
