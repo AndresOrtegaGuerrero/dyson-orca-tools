@@ -39,7 +39,7 @@ class Dyson:
 
     def get_s_matrix_ao(self, state: dict):
         """Get the overlap matrix in the AO basis."""
-        return np.column_stack(state["Molecule"]["S-Matrix"])
+        return np.array(state["Molecule"]["S-Matrix"])
 
     def get_mo_coeff_array(self, state: dict):
         mo_orbs = state["Molecule"]["MolecularOrbitals"]["MOs"]
