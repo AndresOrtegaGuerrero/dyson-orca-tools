@@ -92,13 +92,13 @@ def validate_json_file(path: Path, label: str):
 
 def sannity_check(neutral_wfn_data: dict, charged_wfn_data: dict):
     """Perform sanity checks on the JSON data."""
-    # Check that the charges are not the same
+    # Check that charges are correct
     neutral_charge = neutral_wfn_data["Molecule"]["Charge"]
     charged_charge = charged_wfn_data["Molecule"]["Charge"]
 
-    if neutral_charge == charged_charge:
+    if abs(neutral_charge - charged_charge) != 1:
         typer.secho(
-            "❌ Error: The charges of the neutral and charged states are the same.",
+            "❌ Error: The charges of the neutral and charged states are not correct.",
             fg=typer.colors.RED,
         )
         raise typer.Exit(1)
