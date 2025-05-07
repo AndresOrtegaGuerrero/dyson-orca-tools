@@ -114,6 +114,18 @@ def sannity_check(neutral_wfn_data: dict, charged_wfn_data: dict):
         )
         raise typer.Exit(1)
 
+    # Check if the multiplicities are correct
+
+    multiplicity_neutral = neutral_wfn_data["Molecule"]["Multiplicity"]
+    multiplicity_charged = charged_wfn_data["Molecule"]["Multiplicity"]
+
+    if abs((abs(multiplicity_neutral) - abs(multiplicity_charged))) != 1:
+        typer.secho(
+            "❌ Error: The multiplicities of the neutral and charged states are not correct.",
+            fg=typer.colors.RED,
+        )
+        raise typer.Exit(1)
+
     # Check if the coordinates and basis sets are the same and in order
 
     for idx in range(neutral_atoms):

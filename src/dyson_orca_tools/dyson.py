@@ -24,6 +24,8 @@ class Dyson:
 
         # MO-MO overlap
         self.s_matrix_mo = self.get_s_matrix_mo()
+        self.mult_initial = self.initial["Molecule"]["Multiplicity"]
+        self.mult_final = self.final["Molecule"]["Multiplicity"]
 
         # Info system
         self.num_inactive_orbs = sum(
