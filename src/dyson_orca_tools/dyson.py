@@ -2,6 +2,7 @@ from pyscf import gto
 from pyscf.tools import cubegen
 from .utils import generate_basis_dict, parse_orca_labels_pyscf
 from typing import List, Tuple, Dict
+from itertools import product
 import numpy as np
 
 
@@ -84,6 +85,60 @@ class Dyson:
 
         return None, None
 
+    def alpha_beta_map(self, ci_list):
+        """Create a map of alpha and beta Slater determinants for Psi_final"""
+        alpha_set = set()
+        beta_set = set()
+
+        for sd in ci_list:
+            alpha = tuple(sd[::2])
+            beta = tuple(sd[1::2])
+            alpha_set.add(alpha)
+            beta_set.add(beta)
+
+        return {"alpha": list(alpha_set), "beta": list(beta_set)}
+
+    def alpha_beta_operator_map(self, operator_initial):
+        alpha_set = set()
+        beta_set = set()
+
+        for key, value in operator_initial.items():
+            for ci_vector, vectors in value.items():
+                for vector in vectors:
+                    sd = np.array(list(vector[2]), dtype=int)
+                    alpha = tuple(sd[::2])
+                    beta = tuple(sd[1::2])
+                    alpha_set.add(alpha)
+                    beta_set.add(beta)
+        return {"alpha": list(alpha_set), "beta": list(beta_set)}
+
+    def generate_overlaps_dict(self, psi_final, operator_psi_initial):
+        sub_s_mo = self.s_matrix_mo[
+            self.num_inactive_orbs : self.num_inactive_orbs + self.num_active_orbs,
+            self.num_inactive_orbs : self.num_inactive_orbs + self.num_active_orbs,
+        ]
+
+        overlaps_list = set()
+        for spin in ["alpha", "beta"]:
+            for i, j in product(psi_final[spin], operator_psi_initial[spin]):
+                combined = tuple(i + j)
+                overlaps_list.add(combined)
+        overlaps_list = list(overlaps_list)
+
+        # Determinants
+        overlaps_dictionary = {}
+        for overlap in overlaps_list:
+            final = np.array(overlap[: self.num_active_orbs])
+            initial = np.array(overlap[self.num_active_orbs :])
+            vec_comparison = final * initial
+            indices = np.where(vec_comparison == 1)[0]
+            Slater = sub_s_mo[np.ix_(indices, indices)]
+            det = np.linalg.det(Slater)
+            string = "".join(str(b) for b in overlap)
+            overlaps_dictionary[string] = det
+
+        return overlaps_dictionary
+
     def dyson_coefficients(self):
         dyson_coeff = np.zeros(2 * self.parameters["parameters"]["initial"]["norb"])  # noqa: F841
 
@@ -92,25 +147,16 @@ class Dyson:
         sds_dict = self.generate_sds_dict(
             self.CI_initial, self.mult_final, mode=self.operator
         )
-        print(sds_dict)
+        # Step 2: Create dictionary of a|a_dager | Psi_initial > in alpha/beta space
+        operator_psi_initial = self.alpha_beta_operator_map(sds_dict)
+        # Step 3: Create a dictionary of Psi_final in alpha/beta space
+        ci_final_list = [self.ci_vector_to_array(key) for key in self.CI_final.keys()]
+        psi_final = self.alpha_beta_map(ci_final_list)
 
-        # for sd_i, ci_i in self.CI_initial.items():
-        #     for sd_f, ci_f in self.CI_final.items():
-        #         idx, sign = self.occupation_diff(sd_f, sd_i)
-        #         if idx is not None:
-        #             dyson_coeff[idx] += sign * ci_i * ci_f
-        # print(dyson_coeff)
-        # dyson_ao = np.zeros(self.s_matrix_ao.shape[0])
-        # for i in range(self.num_active_orbs):
-        #     coeff = dyson_coeff[2 * i] + dyson_coeff[2 * i + 1]  # alpha + beta
-        #     mo_index = self.num_inactive_orbs + i
+        # Step 4: Generate the overlaps dictionary
+        overlaps_dict = self.generate_overlaps_dict(psi_final, operator_psi_initial)  # noqa: F841
 
-        #     mo_coeff = (
-        #         self.MO_coeff_final if self.add_or_remove < 0 else self.MO_coeff_initial
-        #     )
-        #     dyson_ao += coeff * mo_coeff[:, mo_index]
-
-        # return dyson_ao
+        # Step 5: Compute dyson orbital
 
     def casci_dyson_coefficients(self):
         dyson_coeff = np.zeros(2 * self.parameters["parameters"]["initial"]["norb"])
