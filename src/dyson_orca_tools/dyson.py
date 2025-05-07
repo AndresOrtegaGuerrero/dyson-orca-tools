@@ -1,6 +1,7 @@
 from pyscf import gto
 from pyscf.tools import cubegen
 from .utils import generate_basis_dict, parse_orca_labels_pyscf
+from typing import List, Tuple, Dict
 import numpy as np
 
 
@@ -38,6 +39,7 @@ class Dyson:
             self.parameters["parameters"]["initial"]["nelc"]
             - self.parameters["parameters"]["final"]["nelc"]
         )
+        self.operator = "annihilate" if self.add_or_remove > 0 else "create"
 
     def get_s_matrix_ao(self, state: dict):
         """Get the overlap matrix in the AO basis."""
@@ -49,18 +51,7 @@ class Dyson:
         return np.column_stack(mo_coeff_list)
 
     def get_s_matrix_mo(self):
-        # Determine left and right based on charge
-        # charge_initial = self.initial["Molecule"]["Charge"]
-        # charge_final = self.final["Molecule"]["Charge"]
-
-        # C_left, C_right = (
-        #    (self.MO_coeff_final, self.MO_coeff_initial)
-        #    if charge_initial > charge_final
-        #    else (self.MO_coeff_initial, self.MO_coeff_final)
-        # )
-
-        # return C_left.T @ self.s_matrix_ao @ C_right
-
+        """Get the overlap matrix in the MO basis."""
         return self.MO_coeff_initial.T @ self.s_matrix_ao @ self.MO_coeff_final
 
     def get_ci_coeff(self, state: str) -> dict:
@@ -94,24 +85,32 @@ class Dyson:
         return None, None
 
     def dyson_coefficients(self):
-        dyson_coeff = np.zeros(2 * self.parameters["parameters"]["initial"]["norb"])
-        for sd_i, ci_i in self.CI_initial.items():
-            for sd_f, ci_f in self.CI_final.items():
-                idx, sign = self.occupation_diff(sd_f, sd_i)
-                if idx is not None:
-                    dyson_coeff[idx] += sign * ci_i * ci_f
-        print(dyson_coeff)
-        dyson_ao = np.zeros(self.s_matrix_ao.shape[0])
-        for i in range(self.num_active_orbs):
-            coeff = dyson_coeff[2 * i] + dyson_coeff[2 * i + 1]  # alpha + beta
-            mo_index = self.num_inactive_orbs + i
+        dyson_coeff = np.zeros(2 * self.parameters["parameters"]["initial"]["norb"])  # noqa: F841
 
-            mo_coeff = (
-                self.MO_coeff_final if self.add_or_remove < 0 else self.MO_coeff_initial
-            )
-            dyson_ao += coeff * mo_coeff[:, mo_index]
+        # Step 1: Generate the Slater determinants for create or annihilate in Slater determinants of Psi_Initial
 
-        return dyson_ao
+        sds_dict = self.generate_sds_dict(
+            self.CI_initial, self.mult_final, mode=self.operator
+        )
+        print(sds_dict)
+
+        # for sd_i, ci_i in self.CI_initial.items():
+        #     for sd_f, ci_f in self.CI_final.items():
+        #         idx, sign = self.occupation_diff(sd_f, sd_i)
+        #         if idx is not None:
+        #             dyson_coeff[idx] += sign * ci_i * ci_f
+        # print(dyson_coeff)
+        # dyson_ao = np.zeros(self.s_matrix_ao.shape[0])
+        # for i in range(self.num_active_orbs):
+        #     coeff = dyson_coeff[2 * i] + dyson_coeff[2 * i + 1]  # alpha + beta
+        #     mo_index = self.num_inactive_orbs + i
+
+        #     mo_coeff = (
+        #         self.MO_coeff_final if self.add_or_remove < 0 else self.MO_coeff_initial
+        #     )
+        #     dyson_ao += coeff * mo_coeff[:, mo_index]
+
+        # return dyson_ao
 
     def casci_dyson_coefficients(self):
         dyson_coeff = np.zeros(2 * self.parameters["parameters"]["initial"]["norb"])
@@ -128,6 +127,66 @@ class Dyson:
             dyson_ao += coeff * self.MO_coeff_initial[:, mo_index]
 
         return dyson_ao
+
+    def generate_sds_initial(
+        self, ci_string: str, mult_final: int, mode: str = "create"
+    ) -> Dict[str, List[Tuple[int, int, str]]]:
+        """
+        For a given initial CI string, generate all determinants
+        by adding or removing one electron in the active space,
+
+        Returns a dict: { ci_string: [ (sign, spin_idx, new_occ_str), … ] }.
+        """
+        if mode not in ("create", "annihilate"):
+            raise ValueError("mode must be 'create' or 'annihilate'")
+
+        occ0 = np.array(self.ci_vector_to_array(ci_string), dtype=int)
+        n_spin = len(occ0)
+        results: List[Tuple[int, int, str]] = []
+
+        str_occ0 = "".join(str(x) for x in occ0)
+
+        for i in range(n_spin):
+            val = occ0[i]
+            if mode == "create" and val == 0:
+                occ1 = occ0.copy()
+                occ1[i] = 1
+            elif mode == "annihilate" and val == 1:
+                occ1 = occ0.copy()
+                occ1[i] = 0
+            else:
+                continue
+
+            # Allow one given multiplicity
+            alpha = occ1[0::2].sum()
+            beta = occ1[1::2].sum()
+            new_mult = (alpha - beta) + 1
+            if new_mult != mult_final:
+                continue
+
+            # SD sign
+            sign = (-1) ** int(occ0[:i].sum())
+
+            new_key = "".join(str(x) for x in occ1)
+            results.append((sign, i, new_key))
+
+        return {str_occ0: results}
+
+    def generate_sds_dict(
+        self, ci_strings: Dict[str, float], mult_final: int, mode: str = "create"
+    ) -> Dict[str, List[Tuple[int, int, str]]]:
+        """
+        For a dict of initial CI strings, generate all connected determinants
+        by adding or removing one electron in the active spin-orbitals.
+
+        Returns a dict: { ci_string: [ (sign, spin_idx, new_occ_str), … ] }.
+        """
+        results: Dict[str, List[Tuple[int, int, str]]] = {}
+
+        for ci_str in ci_strings:
+            subdict = self.generate_sds_initial(ci_str, mult_final, mode)
+            results[ci_str] = subdict
+        return results
 
     def calculation_is_casci(self):
         """Return True if the calculation is CASCI (i.e., MO overlap is identity)."""
@@ -147,8 +206,10 @@ class Dyson:
             else self.dyson_coefficients()
         )
 
-        filename = f"{self.output_dir}/dyson_orbital.cube"
-        self.cubefile_from_moeff(dyson_ao, filename)
+        # temporary to avoid for CASSCF ( will be removed once the next steps are done)
+        if calc_type == "CASCI":
+            filename = f"{self.output_dir}/dyson_orbital.cube"
+            self.cubefile_from_moeff(dyson_ao, filename)
 
     def create_pyscf_molecule(self):
         """Convert the initial wavefunction data to PySCF molecule object."""
