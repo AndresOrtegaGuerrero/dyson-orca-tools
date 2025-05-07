@@ -72,7 +72,7 @@ class Dyson:
 
         return [bit for c in vector for bit in spin_map[c]]
 
-    def occupation_diff(self, sd_f, sd_i):
+    def casci_occupation_diff(self, sd_f, sd_i):
         """Compute the difference between two Slater determinants convert to 0 1 occupation."""
         occ_f = np.array(list(self.ci_vector_to_array(sd_f))).astype(int)
         occ_i = np.array(list(self.ci_vector_to_array(sd_i))).astype(int)
@@ -111,10 +111,39 @@ class Dyson:
 
         return dyson_ao
 
+    def casci_dyson_coefficients(self):
+        dyson_coeff = np.zeros(2 * self.parameters["parameters"]["initial"]["norb"])
+        for sd_i, ci_i in self.CI_initial.items():
+            for sd_f, ci_f in self.CI_final.items():
+                idx, sign = self.casci_occupation_diff(sd_f, sd_i)
+                if idx is not None:
+                    dyson_coeff[idx] += sign * ci_i * ci_f
+        dyson_ao = np.zeros(self.s_matrix_ao.shape[0])
+        for i in range(self.num_active_orbs):
+            coeff = dyson_coeff[2 * i] + dyson_coeff[2 * i + 1]  # alpha + beta
+            mo_index = self.num_inactive_orbs + i
+
+            dyson_ao += coeff * self.MO_coeff_initial[:, mo_index]
+
+        return dyson_ao
+
+    def calculation_is_casci(self):
+        """Return True if the calculation is CASCI (i.e., MO overlap is identity)."""
+        return np.allclose(
+            self.s_matrix_mo, np.eye(self.s_matrix_mo.shape[0]), atol=1e-8
+        )
+
     def dyson_orbital(self):
         """Compute the Dyson orbital."""
 
-        dyson_ao = self.dyson_coefficients()
+        calc_type = "CASCI" if self.calculation_is_casci() else "CASSCF"
+        print(f"Calculation type: {calc_type}")
+
+        dyson_ao = (
+            self.casci_dyson_coefficients()
+            if calc_type == "CASCI"
+            else self.dyson_coefficients()
+        )
 
         filename = f"{self.output_dir}/dyson_orbital.cube"
         self.cubefile_from_moeff(dyson_ao, filename)
