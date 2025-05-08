@@ -85,32 +85,32 @@ class Dyson:
 
         return None, None
 
+    def _extract_alpha_beta(self, sd_list):
+        alpha_set = set()
+        beta_set = set()
+
+        for sd in sd_list:
+            sd = tuple(
+                sd
+            )  # ensure consistent indexing (e.g., from NumPy arrays or lists)
+            alpha_set.add(sd[::2])
+            beta_set.add(sd[1::2])
+
+        return {"alpha": list(alpha_set), "beta": list(beta_set)}
+
     def alpha_beta_map(self, ci_list):
         """Create a map of alpha and beta Slater determinants for Psi_final"""
-        alpha_set = set()
-        beta_set = set()
-
-        for sd in ci_list:
-            alpha = tuple(sd[::2])
-            beta = tuple(sd[1::2])
-            alpha_set.add(alpha)
-            beta_set.add(beta)
-
-        return {"alpha": list(alpha_set), "beta": list(beta_set)}
+        return self._extract_alpha_beta(ci_list)
 
     def alpha_beta_operator_map(self, operator_initial):
-        alpha_set = set()
-        beta_set = set()
-
-        for key, value in operator_initial.items():
-            for ci_vector, vectors in value.items():
-                for vector in vectors:
-                    sd = np.array(list(vector[2]), dtype=int)
-                    alpha = tuple(sd[::2])
-                    beta = tuple(sd[1::2])
-                    alpha_set.add(alpha)
-                    beta_set.add(beta)
-        return {"alpha": list(alpha_set), "beta": list(beta_set)}
+        """Create a map of alpha and beta Slater determinants from operator-initial structure."""
+        sd_list = [
+            np.array(list(vector[2]), dtype=int)
+            for value in operator_initial.values()
+            for vectors in value.values()
+            for vector in vectors
+        ]
+        return self._extract_alpha_beta(sd_list)
 
     def generate_overlaps_dict(self, psi_final, operator_psi_initial):
         sub_s_mo = self.s_matrix_mo[
@@ -118,22 +118,22 @@ class Dyson:
             self.num_inactive_orbs : self.num_inactive_orbs + self.num_active_orbs,
         ]
 
-        overlaps_list = set()
-        for spin in ["alpha", "beta"]:
-            for i, j in product(psi_final[spin], operator_psi_initial[spin]):
-                combined = tuple(i + j)
-                overlaps_list.add(combined)
-        overlaps_list = list(overlaps_list)
+        overlaps_set = {
+            tuple(i + j)
+            for spin in ["alpha", "beta"]
+            for i, j in product(psi_final[spin], operator_psi_initial[spin])
+        }
+        overlaps_list = list(overlaps_set)
 
         # Determinants
         overlaps_dictionary = {}
         for overlap in overlaps_list:
             final = np.array(overlap[: self.num_active_orbs])
             initial = np.array(overlap[self.num_active_orbs :])
-            vec_comparison = final * initial
-            indices = np.where(vec_comparison == 1)[0]
-            Slater = sub_s_mo[np.ix_(indices, indices)]
+            occupied = np.where(final * initial == 1)[0]
+            Slater = sub_s_mo[np.ix_(occupied, occupied)]
             det = np.linalg.det(Slater)
+
             string = "".join(str(b) for b in overlap)
             overlaps_dictionary[string] = det
 
