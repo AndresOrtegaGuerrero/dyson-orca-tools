@@ -127,7 +127,6 @@ class Dyson:
             for i, j in product(psi_final[spin], operator_psi_initial[spin])
         }
         overlaps_list = list(overlaps_set)
-
         # Determinants
         overlaps_dictionary = {}
         for overlap in overlaps_list:
@@ -161,6 +160,7 @@ class Dyson:
         # Step 4: Generate the overlaps dictionary
         overlaps_dict = self.generate_overlaps_dict(psi_final, operator_psi_initial)  # noqa: F841
 
+        print(overlaps_dict)
         # Step 5: Compute dyson orbital
         for sd_i, ci_i in self.CI_initial.items():
             for sd_f, ci_f in self.CI_final.items():
@@ -172,7 +172,6 @@ class Dyson:
                     sign = op_sd_i[0]
                     idx = op_sd_i[1]
                     new_sd_i = op_sd_i[2]
-                    # alpha x beta
                     overlap_alpha = overlaps_dict.get(string_sd_f[::2] + new_sd_i[::2])
                     overlap_beta = overlaps_dict.get(string_sd_f[1::2] + new_sd_i[1::2])
                     dyson_coeff[idx] += sign * coeff * overlap_alpha * overlap_beta
