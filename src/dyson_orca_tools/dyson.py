@@ -90,9 +90,7 @@ class Dyson:
         beta_set = set()
 
         for sd in sd_list:
-            sd = tuple(
-                sd
-            )  # ensure consistent indexing (e.g., from NumPy arrays or lists)
+            sd = tuple(sd)
             alpha_set.add(sd[::2])
             beta_set.add(sd[1::2])
 
