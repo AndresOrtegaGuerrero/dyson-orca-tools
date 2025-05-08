@@ -136,9 +136,11 @@ class Dyson:
             occupied = np.where(final * initial == 1)[0]
             Slater = sub_s_mo[np.ix_(occupied, occupied)]
             det = np.linalg.det(Slater)
-
             string = "".join(str(b) for b in overlap)
-            overlaps_dictionary[string] = det
+            if occupied.size == 0:
+                overlaps_dictionary[string] = 0.0
+            else:
+                overlaps_dictionary[string] = det
 
         return overlaps_dictionary
 
