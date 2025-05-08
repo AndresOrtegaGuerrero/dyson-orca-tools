@@ -132,15 +132,12 @@ class Dyson:
         for overlap in overlaps_list:
             final = np.array(overlap[: self.num_active_orbs])
             initial = np.array(overlap[self.num_active_orbs :])
-            occupied = np.where(final * initial == 1)[0]
-            Slater = sub_s_mo[np.ix_(occupied, occupied)]
+            occupied_final = np.where(final == 1)[0]
+            occupied_initial = np.where(initial == 1)[0]
+            Slater = sub_s_mo[np.ix_(occupied_final, occupied_initial)]
             det = np.linalg.det(Slater)
             string = "".join(str(b) for b in overlap)
-            if occupied.size == 0:
-                overlaps_dictionary[string] = 0.0
-            else:
-                overlaps_dictionary[string] = det
-
+            overlaps_dictionary[string] = det
         return overlaps_dictionary
 
     def dyson_coefficients(self):
@@ -160,7 +157,7 @@ class Dyson:
         # Step 4: Generate the overlaps dictionary
         overlaps_dict = self.generate_overlaps_dict(psi_final, operator_psi_initial)  # noqa: F841
 
-        print(overlaps_dict)
+        # print("Overlaps:", overlaps_dict)
         # Step 5: Compute dyson orbital
         for sd_i, ci_i in self.CI_initial.items():
             for sd_f, ci_f in self.CI_final.items():
