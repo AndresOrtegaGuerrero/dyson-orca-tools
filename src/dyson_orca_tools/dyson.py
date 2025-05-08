@@ -66,6 +66,11 @@ class Dyson:
 
         return [bit for c in vector for bit in spin_map[c]]
 
+    def ci_vector_to_string(self, vector: str) -> list:
+        """Convert CI dict with keys like '[2200]', '[udud]' into lists of 0/1 for alpha/beta occupation."""
+        spin_map = {"2": [1, 1], "u": [1, 0], "d": [0, 1], "0": [0, 0]}
+        return "".join(str(bit) for c in vector for bit in spin_map[c])
+
     def casci_occupation_diff(self, sd_f, sd_i):
         """Compute the difference between two Slater determinants convert to 0 1 occupation."""
         occ_f = np.array(list(self.ci_vector_to_array(sd_f))).astype(int)
@@ -155,6 +160,30 @@ class Dyson:
         overlaps_dict = self.generate_overlaps_dict(psi_final, operator_psi_initial)  # noqa: F841
 
         # Step 5: Compute dyson orbital
+        for sd_i, ci_i in self.CI_initial.items():
+            for sd_f, ci_f in self.CI_final.items():
+                coeff = ci_i * ci_f
+                string_sd_f = self.ci_vector_to_string(sd_f.strip("[]"))
+                string_sd_i = self.ci_vector_to_string(sd_i.strip("[]"))
+                operator = sds_dict[sd_i][string_sd_i]
+                for op_sd_i in operator:
+                    sign = op_sd_i[0]
+                    idx = op_sd_i[1]
+                    new_sd_i = op_sd_i[2]
+                    # alpha x beta
+                    overlap_alpha = overlaps_dict.get(string_sd_f[::2] + new_sd_i[::2])
+                    overlap_beta = overlaps_dict.get(string_sd_f[1::2] + new_sd_i[1::2])
+                    dyson_coeff[idx] += sign * coeff * overlap_alpha * overlap_beta
+
+        print("Dyson coefficients:", dyson_coeff)
+
+        dyson_ao = np.zeros(self.s_matrix_ao.shape[0])
+        for i in range(self.num_active_orbs):
+            ao_coeff = dyson_coeff[2 * i] + dyson_coeff[2 * i + 1]  # alpha + beta
+            mo_index = self.num_inactive_orbs + i
+            dyson_ao += ao_coeff * self.MO_coeff_initial[:, mo_index]
+
+        return dyson_ao
 
     def casci_dyson_coefficients(self):
         dyson_coeff = np.zeros(2 * self.parameters["parameters"]["initial"]["norb"])
@@ -251,9 +280,9 @@ class Dyson:
         )
 
         # temporary to avoid for CASSCF ( will be removed once the next steps are done)
-        if calc_type == "CASCI":
-            filename = f"{self.output_dir}/dyson_orbital.cube"
-            self.cubefile_from_moeff(dyson_ao, filename)
+
+        filename = f"{self.output_dir}/dyson_orbital.cube"
+        self.cubefile_from_moeff(dyson_ao, filename)
 
     def create_pyscf_molecule(self):
         """Convert the initial wavefunction data to PySCF molecule object."""
