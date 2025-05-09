@@ -41,10 +41,7 @@ def parse_orca_labels_pyscf(orca_label):
     split_str = orca_label.split()
     orbital = split_str[-1]
 
-    orb_formating = {
-        "dz2": "dz^2",
-        "dx2y2": "dx2-y2",
-    }
+    orb_formating = {"dz2": "dz^2", "dx2y2": "dx2-y2", "f0": "f+0"}
 
     if orbital[1] == "p":
         shell = str(int(orbital[0]) + 1) + orbital[1:]
@@ -53,6 +50,11 @@ def parse_orca_labels_pyscf(orca_label):
     if orbital[1] == "d":
         d_orbital = orb_formating.get(orbital[1:], orbital[1:])
         shell = str(int(orbital[0]) + 2) + d_orbital
+        orbital = shell
+
+    if orbital[1] == "f":
+        f_orbital = orb_formating.get(orbital[1:], orbital[1:])
+        shell = str(int(orbital[0]) + 3) + f_orbital
         orbital = shell
 
     return [split_str[0], orbital]
