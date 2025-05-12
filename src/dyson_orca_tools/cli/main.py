@@ -29,7 +29,7 @@ def compute_dyson_orbital(
         help="JSON file with the parameters for the calculation containing the Spin CI coefficients.",
     ),
     output_dir: Path = typer.Option(
-        ...,
+        ".",
         "-o",
         "--output-dir",
         help="Directory to save the Dyson orbital files.",
