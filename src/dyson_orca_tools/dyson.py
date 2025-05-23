@@ -80,12 +80,12 @@ class Dyson:
             if np.sum(diff) == 1:
                 # Electron added in final state
                 idx = np.where(diff == 1)[0][0]
-                sign = (-1) ** np.sum(occ_i[:idx])
+                sign = (-1) ** np.sum(occ_f[:idx])
                 return idx, sign
             elif np.sum(diff) == -1:
                 # Electron removed in final state
                 idx = np.where(diff == -1)[0][0]
-                sign = (-1) ** np.sum(occ_i[:idx])
+                sign = (-1) ** np.sum(occ_f[:idx])
                 return idx, sign
 
         return None, None

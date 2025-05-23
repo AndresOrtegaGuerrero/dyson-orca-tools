@@ -17,7 +17,7 @@ pip install -e .
 dyson_orca_tools -i initial.json -f final.json -p params.json
 ```
 
-`params.json` should be a json file with the information contaning the spin CI coeffients
+`params.json` should be a json file with the information containing the spin CI coefficients
 
 Sample input
 
@@ -90,7 +90,7 @@ Here is a recommended configuration:
 }
 ```
 
-After than you can optain json file from the calculations
+After that you can obtain json file from the calculations
 
 ```bash
 orca_2json mol.gbw

@@ -167,7 +167,7 @@ def sannity_check(neutral_wfn_data: dict, charged_wfn_data: dict):
         )
         raise typer.Exit(1)
 
-    # Check if S-Matrix in in the files
+    # Check if S-Matrix is in the files
 
     if (
         "S-Matrix" not in neutral_wfn_data["Molecule"]
