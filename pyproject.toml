@@ -8,8 +8,13 @@ name = "dyson_orca_tools"
 [project]
 name = "dyson_orca_tools"
 dynamic = ["version", "description"]
+authors = [
+    {name = "Andres Ortega Guerrero", email = "andres.ortega-guerrero@empa.ch"},
+    {name = "Gonçalo Catarina", email = "goncalo.catarina@empa.ch"}
+
+]
 readme = "README.md"
-# license = {file = 'LICENSE.txt'}
+license = {file = 'LICENSE.txt'}
 classifiers = [
     "Development Status :: 1 - Planning",
     "License :: OSI Approved :: MIT License",
@@ -22,6 +27,8 @@ dependencies = [
     "typer",
     "pyscf",
 ]
+
+
 
 [project.optional-dependencies]
 dev = [

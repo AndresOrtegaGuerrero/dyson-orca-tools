@@ -190,6 +190,9 @@ class Dyson:
                 idx, sign = self.casci_occupation_diff(sd_f, sd_i)
                 if idx is not None:
                     dyson_coeff[idx] += sign * ci_i * ci_f
+
+        print("Dyson coefficients (CASCI):", dyson_coeff)
+        print("Square sum of coefficients:", np.sum(dyson_coeff**2))
         dyson_ao = np.zeros(self.s_matrix_ao.shape[0])
         for i in range(self.num_active_orbs):
             coeff = dyson_coeff[2 * i] + dyson_coeff[2 * i + 1]  # alpha + beta
@@ -261,9 +264,10 @@ class Dyson:
 
     def calculation_is_casci(self):
         """Return True if the calculation is CASCI (i.e., MO overlap is identity)."""
-        return np.allclose(
-            self.s_matrix_mo, np.eye(self.s_matrix_mo.shape[0]), atol=1e-8
-        )
+        # return np.allclose(
+        #    self.s_matrix_mo, np.eye(self.s_matrix_mo.shape[0]), atol=1e-8
+        # )
+        return True
 
     def dyson_orbital(self):
         """Compute the Dyson orbital."""

@@ -95,3 +95,11 @@ After than you can optain json file from the calculations
 ```bash
 orca_2json mol.gbw
 ```
+
+
+## Contact
+
+If you have any questions or suggestions, feel free to reach out:
+
+- **Authors**: Andres Ortega-Guerrero, Gonçalo Catarina
+- **Email**: [andres.ortega-guerrero@empa.ch](andres.ortega-guerrero@empa.ch) , [goncalo.catarina@empa.ch](goncalo.catarina@empa.ch)
