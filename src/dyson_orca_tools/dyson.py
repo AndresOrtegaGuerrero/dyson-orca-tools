@@ -148,9 +148,10 @@ class Dyson:
         sds_dict = self.generate_sds_dict(
             self.CI_initial, self.mult_final, mode=self.operator
         )
-        # Step 2: Create dictionary of a|a_dager | Psi_initial > in alpha/beta space
+        # Step 2: Create dictionary of unique Slater determinants coming from a|a_dager | Psi_initial >
+        # in alpha/beta space
         operator_psi_initial = self.alpha_beta_operator_map(sds_dict)
-        # Step 3: Create a dictionary of Psi_final in alpha/beta space
+        # Step 3: Create a dictionary of unique Slater determinants of Psi_final in alpha/beta space
         ci_final_list = [self.ci_vector_to_array(key) for key in self.CI_final.keys()]
         psi_final = self.alpha_beta_map(ci_final_list)
 
@@ -173,11 +174,12 @@ class Dyson:
                     overlap_beta = overlaps_dict.get(string_sd_f[1::2] + new_sd_i[1::2])
                     dyson_coeff[idx] += sign * coeff * overlap_alpha * overlap_beta
 
-        print("Dyson coefficients:", dyson_coeff)
+        # print("Dyson coefficients:", dyson_coeff)
 
         dyson_ao = np.zeros(self.s_matrix_ao.shape[0])
         for i in range(self.num_active_orbs):
             ao_coeff = dyson_coeff[2 * i] + dyson_coeff[2 * i + 1]  # alpha + beta
+            # note: one of the spin channels gives 0 due to choice of multiplicity
             mo_index = self.num_inactive_orbs + i
             dyson_ao += ao_coeff * self.MO_coeff_initial[:, mo_index]
 
