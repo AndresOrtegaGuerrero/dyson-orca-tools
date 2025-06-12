@@ -322,4 +322,4 @@ class Dyson:
         # Reorder the MO coefficients to match the PySCF AO labels
         for idx in self.pyscf_ao_labels:
             mo_pyscf_coeff.append(moeff[self.orca_ao_labels.index(idx)])
-        cubegen.orbital(self.pyscf_molecule, filename, mo_pyscf_coeff)
+        cubegen.orbital(self.pyscf_molecule, filename, mo_pyscf_coeff, margin=14.0)
