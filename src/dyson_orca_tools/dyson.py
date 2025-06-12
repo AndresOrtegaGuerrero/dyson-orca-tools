@@ -266,10 +266,12 @@ class Dyson:
 
     def calculation_is_casci(self):
         """Return True if the calculation is CASCI (i.e., MO overlap is identity)."""
-        # return np.allclose(
-        #    self.s_matrix_mo, np.eye(self.s_matrix_mo.shape[0]), atol=1e-8
-        # )
-        return True
+        sub_s_mo = self.s_matrix_mo[
+            self.num_inactive_orbs : self.num_inactive_orbs + self.num_active_orbs,
+            self.num_inactive_orbs : self.num_inactive_orbs + self.num_active_orbs,
+        ]
+
+        return np.allclose(sub_s_mo, np.eye(sub_s_mo.shape[0]), atol=1e-8)
 
     def dyson_orbital(self):
         """Compute the Dyson orbital."""
