@@ -302,6 +302,7 @@ class Dyson:
         mol.unit = "Angstrom"
         mol.basis = generate_basis_dict(self.initial["Molecule"]["Atoms"])
         mol.charge = self.initial["Molecule"]["Charge"]
+        mol.spin = self.initial["Molecule"]["Multiplicity"]-1
         mol.build()
 
         return mol
