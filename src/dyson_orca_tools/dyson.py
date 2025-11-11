@@ -34,13 +34,18 @@ class Dyson:
             orb["Occupancy"] == 2.0
             for orb in self.initial["Molecule"]["MolecularOrbitals"]["MOs"]
         )
-        self.num_active_orbs = self.parameters["parameters"]["initial"]["norb"]
-
-        self.add_or_remove = (
-            self.parameters["parameters"]["initial"]["nelc"]
-            - self.parameters["parameters"]["final"]["nelc"]
-        )
+        self.num_active_orbs = self.get_norbs()
+        self.add_or_remove = self.get_nelc("initial") - self.get_nelc("final")
         self.operator = "annihilate" if self.add_or_remove > 0 else "create"
+
+    def get_norbs(self):
+        """Get number of active orbitals from CI string"""
+        return len(list(self.CI_initial.keys())[0])
+
+    def get_nelc(self,state):
+        """Get number of electrons from CI string"""
+        ci_string = list(self.parameters["parameters"][state]["spin_ci"].keys())[0].strip("[]")
+        return sum([int(a) for a in ci_string.replace('u','1').replace('d','1')])
 
     def get_s_matrix_ao(self, state: dict):
         """Get the overlap matrix in the AO basis."""
@@ -141,7 +146,7 @@ class Dyson:
         return overlaps_dictionary
 
     def dyson_coefficients(self):
-        dyson_coeff = np.zeros(2 * self.parameters["parameters"]["initial"]["norb"])  # noqa: F841
+        dyson_coeff = np.zeros(2 * self.num_active_orbs)  # noqa: F841
 
         # Step 1: Generate the Slater determinants for create or annihilate in Slater determinants of Psi_Initial
 
@@ -186,7 +191,7 @@ class Dyson:
         return dyson_ao
 
     def casci_dyson_coefficients(self):
-        dyson_coeff = np.zeros(2 * self.parameters["parameters"]["initial"]["norb"])
+        dyson_coeff = np.zeros(2 * self.num_active_orbs)
         for sd_i, ci_i in self.CI_initial.items():
             for sd_f, ci_f in self.CI_final.items():
                 idx, sign = self.casci_occupation_diff(sd_f, sd_i)

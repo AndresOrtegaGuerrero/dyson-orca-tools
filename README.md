@@ -25,10 +25,6 @@ Sample input
 {
   "parameters": {
     "initial": {
-      "nelc": 4,
-      "norb": 4,
-      "mult": 1,
-      "charge": 0,
       "spin_ci": {
         "[2200]": 0.957520133,
         "[2020]": -0.224387606,
@@ -42,10 +38,6 @@ Sample input
       }
     },
     "final": {
-      "nelc": 5,
-      "norb": 4,
-      "mult": 2,
-      "charge": -1,
       "spin_ci": {
         "[02u2]": -0.051431580,
         "[du2u]": 0.055430255,
