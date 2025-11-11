@@ -74,7 +74,7 @@ def validate_determinants(det_csf_list, params, state_name):
             )
             raise typer.Exit(1)
 
-        num_elec = string.count("2") + string.count("u") + string.count("d")
+        num_elec = 2 * string.count("2") + string.count("u") + string.count("d")
 
         if num_elec != params["nelec"]:
             typer.secho(
