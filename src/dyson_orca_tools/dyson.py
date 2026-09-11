@@ -163,7 +163,6 @@ class Dyson:
             for ci_str in ci_strings
         }
 
-    # ------------------------------------------------------------ coefficients
     def _spin_orbital_to_ao(self, dyson_coeff: np.ndarray) -> np.ndarray:
         """Contract spin-orbital coefficients (alpha+beta) with the initial MOs."""
         mo_coeff = (
@@ -206,7 +205,6 @@ class Dyson:
 
         return dyson_coeff
 
-    # ------------------------------------------------------------------ public
     def calculation_is_casci(self, atol: float = 1e-8) -> bool:
         """True when initial and final share the active orbitals (MO overlap = 1)."""
         sub = self.active_overlap
