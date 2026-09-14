@@ -100,8 +100,10 @@ def validate(params: Parameters):
             raise ValueError(f"{where}: nelc must differ from initial by 1")
         if run.norb != ini.norb:
             raise ValueError(f"{where}: norb must equal initial norb")
-        if abs(run.mult - ini.mult) != 1:
-            raise ValueError(f"{where}: mult must differ from initial by 1 (ΔS = ±1/2)")
+        if (run.mult - ini.mult) % 2 == 0:
+            raise ValueError(
+                f"{where}: mult parity must change (one electron added/removed)"
+            )
         if not run.roots:
             raise ValueError(f"{where}: no roots")
         for j, root in enumerate(run.roots):

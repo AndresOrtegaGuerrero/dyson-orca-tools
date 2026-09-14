@@ -34,9 +34,13 @@ dependencies = [
 cube = [
   "pyscf",
 ]
+plot = [
+  "matplotlib",
+]
 dev = [
   "bumpver==2023.1129",
   "pre-commit==3.6.0",
+  "pytest",
 
 ]
 
