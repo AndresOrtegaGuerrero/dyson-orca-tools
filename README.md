@@ -61,7 +61,7 @@ The ORCA inputs need `PrintWF det` and a small `TPrintWF` (e.g. `1e-6`) in `%cas
 | `dyson_<side><j>_m<mult>.cube` | with `--cube`, needs `pip install -e .[cube]` (PySCF) |
 | `spectral_function.png/.pdf` | with `--plot`, needs `pip install -e .[plot]` (matplotlib) |
 
-Peaks are labelled ϱ−,j / ϱ+,j by increasing |ω| within each side; energies are relative to the
+Peaks are labelled ϱ−,j / ϱ+,j by increasing energy of the N±1 state within each side (j = 0 is the ground state of the ion); energies are relative to the
 initial ground state (removal negative, addition positive); `--shift` adds a rigid offset.
 
 ### Orbitals: CASCI vs CASSCF

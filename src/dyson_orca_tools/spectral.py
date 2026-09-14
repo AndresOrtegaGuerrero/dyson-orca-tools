@@ -45,10 +45,11 @@ def peak_energy(e_initial: float, e_final: float, removal: bool) -> float:
 
 
 def _relabel(peaks: list[DysonPeak]) -> list[DysonPeak]:
-    """Number peaks 0, 1, ... by increasing |omega| within each side."""
-    for side in ("-", "+"):
+    """Number peaks 0, 1, ... by increasing energy of the N±1 state within each side:
+    removal ω = E_N − E_{N−1} (descending ω), addition ω = E_{N+1} − E_N (ascending ω)."""
+    for side, sign in (("-", -1), ("+", 1)):
         same_side = sorted(
-            (p for p in peaks if p.side == side), key=lambda p: abs(p.omega)
+            (p for p in peaks if p.side == side), key=lambda p: sign * p.omega
         )
         for j, p in enumerate(same_side):
             p.label = f"{side},{j}"

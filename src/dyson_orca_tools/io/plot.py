@@ -83,6 +83,19 @@ def _spread(positions, min_gap, lo, hi):
     return out
 
 
+def _side_curve(peaks, side, omega, rho, eta):
+    """ρ(ω) restricted to one side. Rebuilt from the peaks when η is known (sides may
+    overlap in energy, e.g. a bound anion); otherwise split the total curve at ω = 0."""
+    if eta:
+        out = np.zeros_like(omega)
+        for p in peaks:
+            if p.side == side:
+                out += eta * p.strength / ((omega - p.omega) ** 2 + eta**2)
+        return out
+    mask = omega <= 0 if side == "-" else omega >= 0
+    return np.where(mask, rho, 0.0)
+
+
 def plot_spectrum(
     peaks,
     omega,
@@ -107,17 +120,15 @@ def plot_spectrum(
         fig, ax = plt.subplots(figsize=figsize, constrained_layout=True)
 
         for side, name in (("-", r"$N-1$ (removal)"), ("+", r"$N+1$ (addition)")):
-            mask = omega <= 0 if side == "-" else omega >= 0
+            rho_side = _side_curve(peaks, side, omega, rho, eta)
             if vertical:
                 ax.fill_betweenx(
-                    omega[mask], rho[mask], 0, color=COLOR[side], alpha=0.15, lw=0
+                    omega, rho_side, 0, color=COLOR[side], alpha=0.15, lw=0
                 )
-                ax.plot(rho[mask], omega[mask], color=COLOR[side], lw=1.2, label=name)
+                ax.plot(rho_side, omega, color=COLOR[side], lw=1.2, label=name)
             else:
-                ax.fill_between(
-                    omega[mask], rho[mask], 0, color=COLOR[side], alpha=0.15, lw=0
-                )
-                ax.plot(omega[mask], rho[mask], color=COLOR[side], lw=1.2, label=name)
+                ax.fill_between(omega, rho_side, 0, color=COLOR[side], alpha=0.15, lw=0)
+                ax.plot(omega, rho_side, color=COLOR[side], lw=1.2, label=name)
 
         ref_line = ax.axhline if vertical else ax.axvline
         ref_line(0, color=INK["secondary"], lw=0.6, ls=(0, (3, 2)))
