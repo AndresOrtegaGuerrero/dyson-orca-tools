@@ -9,8 +9,22 @@ from typing import List
 from ..utils import validate_json_file, sannity_check, parameters_sannity_check
 from ..dyson import Dyson
 from ..io.params import load_parameters, parse_parameters
-from ..io.orca_output import build_parameters
+from ..io.orca_output import build_parameters, parse_orca_output
 from ..spectral import build_peaks, spectral_function, omega_grid
+
+from ..tdm import TransitionDensity
+from ..dipole import ao_dipole, transition_dipole, fragment_contributions
+from ..ehmap import (
+    ao_to_atom,
+    fragment_of_ao,
+    omega_matrix,
+    metrics,
+    plot_ehmap,
+    active_mo_coefficients,
+    load_fragments,
+    orbital_fragment_populations,
+    active_occupations,
+)
 
 app = typer.Typer(
     help="Dyson orbitals and multireference spectral functions from ORCA CASCI/CASSCF JSON."
@@ -319,6 +333,151 @@ def plot_outputs(
 ):
     """Re-plot a spectrum from the files written by `spectrum` (no recomputation)."""
     _plot_or_warn(output_dir, title, vertical)
+
+
+@app.command("ehmap")
+def electron_hole_map(
+    orca_out: Path = typer.Option(
+        ..., "-o", "--orca-out", help="ORCA output with PrintWF det."
+    ),
+    wfn: Path = typer.Option(
+        ..., "-j", "--json", help="orca_2json file of the same gbw."
+    ),
+    pair: List[str] = typer.Option(
+        ["0:1"], "--pair", help="Root pair I:J, repeatable."
+    ),
+    all_pairs: bool = typer.Option(
+        False, "--all-pairs", help="Ω for every root pair (table only)."
+    ),
+    fragments: Path = typer.Option(
+        None, "-f", "--fragments", help="JSON {name: [atom indices]}."
+    ),
+    orbitals: bool = typer.Option(
+        False,
+        "--orbitals",
+        help="Print/write the fragment population of each active MO.",
+    ),
+    dipole: bool = typer.Option(
+        False,
+        "--dipole",
+        help="Transition dipole and its fragment split (needs dipole integrals in the JSON).",
+    ),
+    output_dir: Path = typer.Option("ehmap", "-d", "--output-dir"),
+    plot: bool = typer.Option(True, "--plot/--no-plot"),
+):
+    """Electron–hole correlation map Ω_AB and NTO weights between CASSCF roots."""
+    output_dir.mkdir(parents=True, exist_ok=True)
+    cas = parse_orca_output(orca_out)
+    state = validate_json_file(wfn, "Wavefunction")
+    ci = {r.index: r.spin_ci for r in cas.roots}
+    c_act = active_mo_coefficients(state, cas.norb)
+    s = np.array(state["Molecule"]["S-Matrix"])
+    labels, groups = load_fragments(fragments, state)
+    frag = fragment_of_ao(ao_to_atom(state), groups)
+
+    dip = ao_dipole(state) if dipole else None
+
+    pairs = [tuple(map(int, p.split(":"))) for p in pair]
+    if all_pairs:
+        pairs = [(i, j) for i in ci for j in ci if i < j]
+
+    summary, omegas = {}, {}
+    for i, j in pairs:
+        td = TransitionDensity(ci[i], ci[j], cas.norb)
+        g = td.gamma()
+        d_ao = td.to_ao(c_act, g)  # rows = particle, cols = hole
+        om = omega_matrix(d_ao.T, s, frag)  # .T → rows = hole, cols = electron
+        m = metrics(om)
+        m["nto_weights"] = td.ntos(g)[0][:5].tolist()
+        m["parsed_norms"] = list(td.parsed_norms)
+        if dip is not None:
+            mu = transition_dipole(d_ao, dip)
+            m["mu"] = mu.tolist()
+            _write_dipole_csv(
+                output_dir / f"dipole_{i}_{j}.csv",
+                fragment_contributions(d_ao, dip, frag),
+                mu,
+                labels,
+            )
+        summary[f"{i}:{j}"], omegas[(i, j)] = m, om
+        np.save(output_dir / f"gamma_{i}_{j}.npy", g)
+        _write_omega_csv(output_dir / f"omega_{i}_{j}.csv", om, labels)
+        typer.echo(
+            f"   {i}→{j}: Ω = {m['Omega']:.4f}  CT = {m['CT']:.2f}  PR = {m['PR']:.1f}"
+        )
+        if dip is not None:
+            typer.echo(
+                f"        μ = ({mu[0]:+.5f}, {mu[1]:+.5f}, {mu[2]:+.5f}) a.u.  |μ| = {np.linalg.norm(mu):.5f}"
+            )
+
+    with open(output_dir / "summary.json", "w") as f:
+        json.dump(summary, f, indent=2)
+    if all_pairs:
+        _write_pair_table(output_dir / "omega_pairs.csv", summary, sorted(ci))
+    if plot and not all_pairs:
+        vmax = max(om.max() for om in omegas.values())  # one colour scale for all maps
+        for (i, j), om in omegas.items():
+            plot_ehmap(
+                om,
+                labels,
+                str(output_dir / f"ehmap_{i}_{j}.png"),
+                title=f"roots {i}→{j}  Ω={summary[f'{i}:{j}']['Omega']:.3f}",
+                vmax=vmax,
+            )
+    if orbitals:
+        occ = active_occupations(state, cas.norb)
+        pop = orbital_fragment_populations(c_act, s, frag)
+        _write_orbital_table(output_dir / "active_orbitals.csv", occ, pop, labels)
+        typer.echo(
+            f"   {'act':>4} {'occ':>6} " + "".join(f"{label:>11}" for label in labels)
+        )
+        for i, (o, row) in enumerate(zip(occ, pop), start=1):
+            typer.echo(f"   {i:>4} {o:6.3f} " + "".join(f"{x:11.2f}" for x in row))
+
+    _ok(f"written {output_dir}")
+
+
+def _write_omega_csv(path, om, labels):
+    with open(path, "w", newline="") as f:
+        w = csv.writer(f)
+        w.writerow(["hole\\electron", *labels])
+        for lab, row in zip(labels, om):
+            w.writerow([lab, *(f"{x:.6e}" for x in row)])
+
+
+def _write_pair_table(path, summary, roots):
+    with open(path, "w", newline="") as f:
+        w = csv.writer(f)
+        w.writerow(["I\\J", *roots])
+        for i in roots:
+            w.writerow(
+                [
+                    i,
+                    *(
+                        f"{summary[f'{min(i, j)}:{max(i, j)}']['Omega']:.4e}"
+                        if i != j
+                        else "-"
+                        for j in roots
+                    ),
+                ]
+            )
+
+
+def _write_dipole_csv(path, per_frag, mu, labels):
+    with open(path, "w", newline="") as f:
+        w = csv.writer(f)
+        w.writerow(["fragment", "mu_x", "mu_y", "mu_z"])
+        for lab, row in zip(labels, per_frag):
+            w.writerow([lab, *(f"{x:+.6f}" for x in row)])
+        w.writerow(["total", *(f"{x:+.6f}" for x in mu)])
+
+
+def _write_orbital_table(path, occ, pop, labels):
+    with open(path, "w", newline="") as f:
+        w = csv.writer(f)
+        w.writerow(["active_mo", "occupation", *labels])
+        for i, (o, row) in enumerate(zip(occ, pop), start=1):
+            w.writerow([i, f"{o:.4f}", *(f"{x:.4f}" for x in row)])
 
 
 if __name__ == "__main__":

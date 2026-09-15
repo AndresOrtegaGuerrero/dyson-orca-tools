@@ -1,4 +1,4 @@
-"""Compute NTO occupations and left/right NTO orbitals from the transition density matrix."""
+"""Transition 1-RDM γ[t,u] = <I|E_tu|J> between CAS roots (I == J → 1-RDM)."""
 
 import numpy as np
 
@@ -50,16 +50,18 @@ class TransitionDensity:
                 s_q, occ_q = _flip(occ, q, 0)  # remove electron from q
                 for p in np.flatnonzero(occ_q == 0):  # a†_p for unoccupied
                     if (p - q) % 2:
-                        continue  # same spin, cannot excite
+                        continue  # spin conserved
                     s_p, occ_p = _flip(occ_q, p, 1)  # add electron to p
                     c_bra = self.bra.get(occ_p.tobytes())
                     if c_bra is not None:
                         gamma[p // 2, q // 2] += s_q * s_p * c_bra * c_ket
         return gamma
 
-    def to_ao(self, c_active: np.ndarray) -> np.ndarray:
+    def to_ao(
+        self, c_active: np.ndarray, gamma: np.ndarray | None = None
+    ) -> np.ndarray:
         """Transform the transition density matrix to the AO basis."""
-        gamma = self.gamma()
+        gamma = self.gamma() if gamma is None else gamma
         if gamma is None:
             gamma = np.zeros((self.norb, self.norb))
         return c_active @ gamma @ c_active.T
