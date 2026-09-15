@@ -221,11 +221,15 @@ dyson ehmap out.out mol.json --root 0 --root 3 [--fragments frags.json] [--dipol
 → `ehmap/`: `gamma_r0_r3.npy`, `omega_r0_r3.csv`, `ehmap_r0_r3.png`, `summary.json`.
 Check: runs end-to-end on pentacene and on cas1414; `summary.json` reproduces the step-1 numbers.
 
-### 3.5 Step 5 — `dipole.py` (PySCF `[cube]` extra)
+### 3.5 Step 5 — `dipole.py` (no PySCF: AO dipole integrals from `orca_2json`)
 
-`ao_dipole(json_state)` via `pyscf_molecule`, `transition_dipole(D, d)`,
+`orca_2json` exports the AO dipole integrals when `mol.json.conf` contains
+`"1elPropertyIntegrals": ["dipole"]` (alongside `"1elIntegrals": ["S"]`), so the atom-resolved
+transition dipole needs nothing outside the JSON: `transition_dipole(D, d)`,
 `atom_contributions(D, d, atom_map)`.
-Check: `|μ_0I|` vs ORCA's TX/TY/TZ (1e-3 a.u.); `Σ_A μ_A == μ`.
+Check: `|μ_0I|` vs ORCA's DX/DY/DZ (1e-3 a.u.); `Σ_A μ_A == μ`.
+(`"Densities": ["all"]` would also export the QD-NEVPT2-corrected densities from `mol.densities`,
+which is the route to NDOs of the *perturbed* states if ever needed.)
 
 ### 3.6 Step 6 — `mixing.py` (QD-NEVPT2 borrowing)
 
@@ -245,7 +249,7 @@ Check: `f_K` rebuilt from `μ_K` and the QD energies == ORCA's QD-NEVPT2 f.
 ```
 %casscf  ...  PrintWF det   TPrintWF 1e-6   DoNTO true   DoNDO true  end
 ```
-plus `orca_2json mol.gbw`. For the emitting state, repeat at the CASSCF-optimised geometry of that
+plus `orca_2json mol.gbw` with `mol.json.conf` = `{"MOCoefficients": true, "Basisset": true, "1elIntegrals": ["S"], "1elPropertyIntegrals": ["dipole"]}`. For the emitting state, repeat at the CASSCF-optimised geometry of that
 root.
 
 ## References
