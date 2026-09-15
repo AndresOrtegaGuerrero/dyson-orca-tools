@@ -26,6 +26,10 @@ _RE_INFO = {
     "charge": re.compile(r"Total Charge\s+Charge\s+\.+\s+(-?\d+)"),
 }
 
+# For reading NTOs from ORCA
+_RE_NTO_STATE = re.compile(r"NATURAL TRANSITION ORBITALS FOR STATE\s+(\d+)\s+(\d+)A")
+_RE_NTO_OCC = re.compile(r"^\s*\d+\s+:\s+n=\s+([\d.Ee+-]+)")
+
 
 @dataclass
 class OrcaRoot:
@@ -150,3 +154,18 @@ def build_parameters(
             "final": runs,
         }
     }
+
+
+def parse_nto_occupations(path: Path) -> dict[tuple[int, int], list[float]]:
+    """{(root, mult): [n_k, ...]} from the 'CASSCF Natural Transition Orbitals' section."""
+    occ, key = {}, None
+    with open(path) as f:
+        for line in f:
+            if m := _RE_NTO_STATE.search(line):
+                key = (int(m.group(1)), int(m.group(2)))
+                occ[key] = []
+            elif key and (m := _RE_NTO_OCC.match(line)):
+                occ[key].append(float(m.group(1)))
+            elif key and "(acceptor) were saved" in line:
+                key = None
+    return occ
