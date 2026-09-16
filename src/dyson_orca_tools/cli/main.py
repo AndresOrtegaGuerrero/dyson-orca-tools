@@ -479,11 +479,11 @@ def electron_hole_map(
             k = min(cubes, cas.norb)
             roles = ("hole", "particle")
             names = [
-                f"{tag}nto_{i}_{j}_pair{p}_{role}_lam{nto['lambdas'][p]:.3f}"
+                f"{tag}nto_r{i}_r{j}_pair{p}_{role}_lam{nto['lambdas'][p]:.3f}"
                 for p in range(k)
                 for role in roles
             ] + [
-                f"{tag}ndo_{i}_{j}_{p}_{'det' if ndo['kappa'][p] < 0 else 'att'}_kap{ndo['kappa'][p]:+.3f}"
+                f"{tag}ndo_r{i}_r{j}_orb{p}_{'det' if ndo['kappa'][p] < 0 else 'att'}_kap{ndo['kappa'][p]:+.3f}"
                 for p in range(k)
             ]
             vecs = np.column_stack(
