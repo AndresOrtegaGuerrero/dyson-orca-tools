@@ -14,11 +14,14 @@ dropped). Expected block::
 
 from dataclasses import dataclass, field
 from pathlib import Path
+import itertools
 import re
+
+import numpy as np
 
 _RE_ROOT = re.compile(r"^ROOT\s+(\d+):(?:\s+E=\s*(-?\d+\.\d+))?")
 _RE_BLOCK = re.compile(r"BLOCK\s+\d+\s+MULT=\s*(\d+)")
-_RE_DET = re.compile(r"^\[([2ud0]+)\]\s+(-?\d+\.\d+)")
+_RE_DET = re.compile(r"^\s*\[([2ud0]+)\]\s+(-?\d+\.\d+)", re.M)
 _RE_INFO = {
     "norb": re.compile(r"Number of active orbitals\s+\.+\s+(\d+)"),
     "nelc": re.compile(r"Number of active electrons\s+\.+\s+(\d+)"),
@@ -169,3 +172,79 @@ def parse_nto_occupations(path: Path) -> dict[tuple[int, int], list[float]]:
             elif key and "(acceptor) were saved" in line:
                 key = None
     return occ
+
+
+# ----------------------------------------------------- NEVPT2 / QD-NEVPT2
+@dataclass
+class QDNevpt2:
+    mult: int
+    heff: np.ndarray  # printed effective Hamiltonian (Eh), CAS-root basis
+    energies: dict[int, float]  # QD total energies, root -> Eh
+    roots: list[OrcaRoot]  # rotated determinant vectors, index = QD root
+
+
+_RE_PT_ENERGY = re.compile(r"^\s*\d+:\s+(\d+)\s+(\d+)\s+(-?\d+\.\d+)", re.M)
+_RE_QD_ROOT = re.compile(
+    r"ROOT = (\d+)\s*\n\s*-+\s*\n(.*?)Total Energy Correction", re.S
+)
+_RE_QD_MULT = re.compile(r"^\s*MULT (\d+)\s*$", re.M)
+
+
+def detect_pt2(text: str) -> str | None:
+    """'QD-NEVPT2', 'NEVPT2' or None, from the blocks present in the output."""
+    if "QD-NEVPT2 Results" in text:
+        return "QD-NEVPT2"
+    if "NEVPT2 TOTAL ENERGIES" in text:
+        return "NEVPT2"
+    return None
+
+
+def parse_pt2_energies(text: str, kind: str) -> dict[tuple[int, int], float]:
+    """{(mult, root): total energy (Eh)} from the '<kind> TOTAL ENERGIES' table."""
+    start = text.index(f"{kind} TOTAL ENERGIES")
+    block = text[start : text.index("TRANSITION ENERGIES", start)]
+    return {(int(m), int(r)): float(e) for r, m, e in _RE_PT_ENERGY.findall(block)}
+
+
+def _read_orca_matrix(lines) -> np.ndarray:
+    """ORCA matrix print: column blocks of 6, each a header of column indices then one line per row."""
+    cols: dict[int, dict[int, float]] = {}
+    header: list[int] = []
+    for line in itertools.takewhile(str.strip, lines):
+        tok = line.split()
+        if all(x.isdigit() for x in tok):  # column header
+            header = [int(x) for x in tok]
+            continue
+        row = int(tok[0])
+        for c, v in zip(header, tok[1:]):
+            cols.setdefault(row, {})[c] = float(v)
+    n = len(cols)
+    return np.array([[cols[i][j] for j in range(n)] for i in range(n)])
+
+
+def parse_qdnevpt2(path: Path) -> dict[int, QDNevpt2]:
+    """{mult: QDNevpt2} from 'QD-NEVPT2 Results' (H_eff + rotated CI vectors); {} if not a QD run."""
+    text = Path(path).read_text()
+    if detect_pt2(text) != "QD-NEVPT2":
+        return {}
+    sec = text[text.index("QD-NEVPT2 Results") : text.index("QD-NEVPT2 TOTAL ENERGIES")]
+    energies = parse_pt2_energies(text, "QD-NEVPT2")
+    marks = list(_RE_QD_MULT.finditer(sec))
+    out = {}
+    for k, m in enumerate(marks):
+        mult = int(m.group(1))
+        blk = sec[m.end() : marks[k + 1].start() if k + 1 < len(marks) else len(sec)]
+        heff = _read_orca_matrix(
+            blk[blk.index("Total Hamiltonian to be processed") :].splitlines()[1:]
+        )
+        roots = [
+            OrcaRoot(
+                int(r.group(1)),
+                mult,
+                energies[(mult, int(r.group(1)))],
+                {f"[{d}]": float(c) for d, c in _RE_DET.findall(r.group(2))},
+            )
+            for r in _RE_QD_ROOT.finditer(blk)
+        ]
+        out[mult] = QDNevpt2(mult, heff, {r.index: r.energy for r in roots}, roots)
+    return out

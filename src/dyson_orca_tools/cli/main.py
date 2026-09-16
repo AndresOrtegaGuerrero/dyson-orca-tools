@@ -9,11 +9,25 @@ from typing import List
 from ..utils import validate_json_file, sannity_check, parameters_sannity_check
 from ..dyson import Dyson
 from ..io.params import load_parameters, parse_parameters
-from ..io.orca_output import build_parameters, parse_orca_output
+from ..io.orca_output import (
+    build_parameters,
+    parse_orca_output,
+    detect_pt2,
+    parse_pt2_energies,
+    parse_qdnevpt2,
+)
+from ..mixing import mixing_matrix, overlap_matrix, composition
+from ..excited import nto_info, ndo_info, write_orbital_cubes
 from ..spectral import build_peaks, spectral_function, omega_grid
 
 from ..tdm import TransitionDensity
-from ..dipole import ao_dipole, transition_dipole, fragment_contributions
+from ..dipole import (
+    ao_dipole,
+    transition_dipole,
+    fragment_contributions,
+    fragment_charges,
+    centre_origin,
+)
 from ..ehmap import (
     ao_to_atom,
     fragment_of_ao,
@@ -357,6 +371,24 @@ def electron_hole_map(
         "--orbitals",
         help="Print/write the fragment population of each active MO.",
     ),
+    mult: int = typer.Option(
+        None,
+        "--mult",
+        help="Multiplicity block to analyse (default: first block in the output).",
+    ),
+    qd: bool = typer.Option(
+        False,
+        "--qd",
+        help="Use the QD-NEVPT2 rotated states instead of the CASSCF roots.",
+    ),
+    mixing: bool = typer.Option(
+        False, "--mixing", help="Write the QD-NEVPT2 mixing table (U²) and composition."
+    ),
+    cubes: int = typer.Option(
+        0,
+        "--cubes",
+        help="Cubes for the top N NTO pairs and N NDOs per pair (needs the [cube] extra).",
+    ),
     dipole: bool = typer.Option(
         False,
         "--dipole",
@@ -365,62 +397,159 @@ def electron_hole_map(
     output_dir: Path = typer.Option("ehmap", "-d", "--output-dir"),
     plot: bool = typer.Option(True, "--plot/--no-plot"),
 ):
-    """Electron–hole correlation map Ω_AB and NTO weights between CASSCF roots."""
+    """Electron–hole correlation map Ω_AB and NTO/NDO analysis between CASSCF or QD-NEVPT2 roots.
+
+    Per pair I→J the line reads:
+      Ω   one-electron (single-excitation) character of the transition; ‖γ‖² (≈1, or ≈2 out of a closed shell)
+      CT  charge-transfer fraction: share of Ω with hole and electron on different fragments
+      PR  participation ratio: how many fragment pairs share Ω (1 = one local pair)
+      σ   NTO singular values (ORCA's NTO "n"); σ² sum to Ω
+      p   promotion number from the density difference: electrons actually moved (≈1 single, ≈2 double)
+      μ   transition dipole (a.u.), with --dipole
+    Ω ≈ 0 with p ≈ 1 = one electron moved with a spin recoupling: dipole-dark from the reference root.
+    """
     output_dir.mkdir(parents=True, exist_ok=True)
     cas = parse_orca_output(orca_out)
+    text = Path(orca_out).read_text()
+    pt2 = detect_pt2(text)
+    if mult is None:
+        mult = cas.mults[0]
+        if len(cas.mults) > 1:
+            typer.echo(
+                f"   several multiplicity blocks {cas.mults}: using --mult {mult}"
+            )
+    elif mult not in cas.mults:
+        _fail(f"no multiplicity {mult} block in {orca_out} (found {cas.mults})")
+    typer.echo(f"   block mult {mult}, PT2 in output: {pt2 or 'none'}")
+    typer.echo(
+        "   Ω one-electron character | CT charge-transfer fraction | PR fragment pairs involved | "
+        "σ NTO singular values | p electrons moved (density) | μ transition dipole"
+    )
+
     state = validate_json_file(wfn, "Wavefunction")
-    ci = {r.index: r.spin_ci for r in cas.roots}
+    ci = {r.index: r.spin_ci for r in cas.roots if r.mult == mult}
+    cas_energy = {r.index: r.energy for r in cas.roots if r.mult == mult}
+    # diagonal NEVPT2 energies belong to the CASSCF roots; QD energies to the QD states (--qd)
+    energy_pt2 = (
+        {r: e for (m, r), e in parse_pt2_energies(text, "NEVPT2").items() if m == mult}
+        if pt2
+        else {}
+    )
+    if qd or mixing:
+        if pt2 != "QD-NEVPT2":
+            _fail(
+                f"--qd/--mixing need a QD-NEVPT2 run; this output has {pt2 or 'no PT2'} "
+                "(plain NEVPT2 does not mix roots — analyse the CASSCF roots)"
+            )
+        qdres = parse_qdnevpt2(orca_out)[mult]
+    if qd:
+        ci = {r.index: r.spin_ci for r in qdres.roots}
+        energy_pt2 = qdres.energies
+    tag = f"m{mult}_" + ("qd_" if qd else "")
     c_act = active_mo_coefficients(state, cas.norb)
     s = np.array(state["Molecule"]["S-Matrix"])
     labels, groups = load_fragments(fragments, state)
     frag = fragment_of_ao(ao_to_atom(state), groups)
 
-    dip = ao_dipole(state) if dipole else None
+    dip = centre_origin(ao_dipole(state), s, state) if dipole else None
 
     pairs = [tuple(map(int, p.split(":"))) for p in pair]
     if all_pairs:
         pairs = [(i, j) for i in ci for j in ci if i < j]
 
-    summary, omegas = {}, {}
+    summary, omegas, rdm = {}, {}, {}
     for i, j in pairs:
         td = TransitionDensity(ci[i], ci[j], cas.norb)
         g = td.gamma()
         d_ao = td.to_ao(c_act, g)  # rows = particle, cols = hole
         om = omega_matrix(d_ao.T, s, frag)  # .T → rows = hole, cols = electron
         m = metrics(om)
-        m["nto_weights"] = td.ntos(g)[0][:5].tolist()
+        nto = nto_info(g, c_act)
+        m["nto_lambdas"] = nto["lambdas"][:5].tolist()  # σ_k, ORCA's n
+        m["nto_weights"] = nto["weights"][:5].tolist()  # σ_k², sum = Ω
         m["parsed_norms"] = list(td.parsed_norms)
+        for r in (i, j):  # normalised 1-RDMs, cached per root
+            if r not in rdm:
+                t_r = TransitionDensity(ci[r], ci[r], cas.norb)
+                rdm[r] = t_r.gamma() / t_r.parsed_norms[0]
+        ndo = ndo_info(rdm[j], rdm[i], c_act)
+        m["ndo_kappa"] = ndo["kappa"][:6].tolist()
+        m["promotion"] = ndo["p"]
+        if cubes:
+            k = min(cubes, cas.norb)
+            roles = ("hole", "particle")
+            names = [
+                f"{tag}nto_{i}_{j}_pair{p}_{role}_lam{nto['lambdas'][p]:.3f}"
+                for p in range(k)
+                for role in roles
+            ] + [
+                f"{tag}ndo_{i}_{j}_{p}_{'det' if ndo['kappa'][p] < 0 else 'att'}_kap{ndo['kappa'][p]:+.3f}"
+                for p in range(k)
+            ]
+            vecs = np.column_stack(
+                [nto[role][:, p] for p in range(k) for role in roles]
+                + [ndo["coeff"][:, :k]]
+            )
+            try:
+                write_orbital_cubes(state, vecs, names, output_dir / "cubes")
+                typer.echo(f"        {len(names)} cubes -> {output_dir / 'cubes'}")
+            except ImportError as exc:
+                typer.secho(f"⚠️  {exc}", fg=typer.colors.YELLOW)
+        m["dE_casscf_eV"] = (cas_energy[j] - cas_energy[i]) * 27.2114
+        if energy_pt2:
+            m["dE_pt2_eV"] = (energy_pt2[j] - energy_pt2[i]) * 27.2114
         if dip is not None:
             mu = transition_dipole(d_ao, dip)
             m["mu"] = mu.tolist()
             _write_dipole_csv(
-                output_dir / f"dipole_{i}_{j}.csv",
+                output_dir / f"{tag}dipole_{i}_{j}.csv",
                 fragment_contributions(d_ao, dip, frag),
+                fragment_charges(d_ao, s, frag),
                 mu,
                 labels,
             )
         summary[f"{i}:{j}"], omegas[(i, j)] = m, om
-        np.save(output_dir / f"gamma_{i}_{j}.npy", g)
-        _write_omega_csv(output_dir / f"omega_{i}_{j}.csv", om, labels)
+        np.save(output_dir / f"{tag}gamma_{i}_{j}.npy", g)
+        _write_omega_csv(output_dir / f"{tag}omega_{i}_{j}.csv", om, labels)
         typer.echo(
-            f"   {i}→{j}: Ω = {m['Omega']:.4f}  CT = {m['CT']:.2f}  PR = {m['PR']:.1f}"
+            f"   {i}→{j}: Ω = {m['Omega']:.4f}  CT = {m['CT']:.2f}  PR = {m['PR']:.1f}  "
+            f"σ = {', '.join(f'{x:.3f}' for x in m['nto_lambdas'][:3])}  p = {m['promotion']:.2f}"
         )
         if dip is not None:
             typer.echo(
                 f"        μ = ({mu[0]:+.5f}, {mu[1]:+.5f}, {mu[2]:+.5f}) a.u.  |μ| = {np.linalg.norm(mu):.5f}"
             )
 
-    with open(output_dir / "summary.json", "w") as f:
-        json.dump(summary, f, indent=2)
+    with open(output_dir / f"{tag}summary.json", "w") as f:
+        json.dump(
+            {"mult": mult, "pt2": pt2, "qd_states": qd, "pairs": summary}, f, indent=2
+        )
     if all_pairs:
-        _write_pair_table(output_dir / "omega_pairs.csv", summary, sorted(ci))
+        _write_pair_table(output_dir / f"{tag}omega_pairs.csv", summary, sorted(ci))
+    if mixing:
+        e, u = mixing_matrix(qdres.heff)
+        u_ov = overlap_matrix(
+            {r.index: r.spin_ci for r in cas.roots if r.mult == mult},
+            {r.index: r.spin_ci for r in qdres.roots},
+        )
+        _write_mixing_csv(output_dir / f"m{mult}_qd_mixing.csv", u, e, qdres.energies)
+        for K, comp in enumerate(composition(u)):
+            typer.echo(
+                f"   QD root {K} ({(e[K] - e[0]) * 27.2114:.3f} eV) = "
+                + " + ".join(f"{w:.2f}·CAS{J}" for J, w in comp)
+            )
+        if np.abs(np.abs(u) - np.abs(u_ov)).max() > 0.1:
+            typer.secho(
+                "⚠️  mixing from H_eff and from the printed vectors differ by >0.1 (truncation?)",
+                fg=typer.colors.YELLOW,
+            )
     if plot and not all_pairs:
         vmax = max(om.max() for om in omegas.values())  # one colour scale for all maps
         for (i, j), om in omegas.items():
             plot_ehmap(
                 om,
                 labels,
-                str(output_dir / f"ehmap_{i}_{j}.png"),
+                str(output_dir / f"{tag}ehmap_{i}_{j}.png"),
                 title=f"roots {i}→{j}  Ω={summary[f'{i}:{j}']['Omega']:.3f}",
                 vmax=vmax,
             )
@@ -463,13 +592,36 @@ def _write_pair_table(path, summary, roots):
             )
 
 
-def _write_dipole_csv(path, per_frag, mu, labels):
+def _write_mixing_csv(path, u, e, e_orca):
     with open(path, "w", newline="") as f:
         w = csv.writer(f)
-        w.writerow(["fragment", "mu_x", "mu_y", "mu_z"])
-        for lab, row in zip(labels, per_frag):
-            w.writerow([lab, *(f"{x:+.6f}" for x in row)])
-        w.writerow(["total", *(f"{x:+.6f}" for x in mu)])
+        w.writerow(
+            [
+                "QD_root",
+                "E_eigh_Eh",
+                "E_orca_Eh",
+                *(f"U2_CAS{J}" for J in range(u.shape[0])),
+            ]
+        )
+        for K in range(u.shape[1]):
+            w.writerow(
+                [
+                    K,
+                    f"{e[K]:.6f}",
+                    f"{e_orca[K]:.6f}",
+                    *(f"{x:.4f}" for x in u[:, K] ** 2),
+                ]
+            )
+
+
+def _write_dipole_csv(path, per_frag, q_frag, mu, labels):
+    """Origin = molecular centre; a fragment's μ_A shifts by q_A·ΔR under an origin change."""
+    with open(path, "w", newline="") as f:
+        w = csv.writer(f)
+        w.writerow(["fragment", "mu_x", "mu_y", "mu_z", "transition_charge"])
+        for lab, row, q in zip(labels, per_frag, q_frag):
+            w.writerow([lab, *(f"{x:+.6f}" for x in row), f"{q:+.4f}"])
+        w.writerow(["total", *(f"{x:+.6f}" for x in mu), f"{q_frag.sum():+.4f}"])
 
 
 def _write_orbital_table(path, occ, pop, labels):
