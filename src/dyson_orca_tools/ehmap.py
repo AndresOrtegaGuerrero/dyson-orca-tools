@@ -121,13 +121,16 @@ def omega_matrix(
 
 
 def metrics(omega: np.ndarray) -> dict[str, float]:
-    """Total Ω, charge-transfer number and participation ratio (NaN if Ω is exactly zero)."""
+    """Ω = Σ_AB Ω_AB (single-excitation character, Plasser 2014 Eq. 47), CT = Σ_{A≠B} Ω_AB / Ω,
+    PR_frag = 1 / Σ_A ω_A² with ω_A = Σ_B (Ω_AB + Ω_BA) / 2Ω (fragments involved). NaN if Ω = 0."""
     total = float(omega.sum())
-    denom = float((omega**2).sum())
+    if total < 1e-6:  # no one-electron transition density: fractions would be noise
+        return {"Omega": total, "CT": float("nan"), "PR_frag": float("nan")}
+    w_frag = (omega.sum(axis=1) + omega.sum(axis=0)) / (2 * total)
     return {
         "Omega": total,
-        "CT": float((total - np.trace(omega)) / total) if total else float("nan"),
-        "PR": float(total**2 / denom) if denom else float("nan"),
+        "CT": float((total - np.trace(omega)) / total),
+        "PR_frag": float(1.0 / (w_frag**2).sum()),
     }
 
 

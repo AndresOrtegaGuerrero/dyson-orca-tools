@@ -400,13 +400,15 @@ def electron_hole_map(
     """Electron–hole correlation map Ω_AB and NTO/NDO analysis between CASSCF or QD-NEVPT2 roots.
 
     Per pair I→J the line reads:
-      Ω   one-electron (single-excitation) character of the transition; ‖γ‖² (≈1, or ≈2 out of a closed shell)
-      CT  charge-transfer fraction: share of Ω with hole and electron on different fragments
-      PR  participation ratio: how many fragment pairs share Ω (1 = one local pair)
-      σ   NTO singular values (ORCA's NTO "n"); σ² sum to Ω
-      p   promotion number from the density difference: electrons actually moved (≈1 single, ≈2 double)
-      μ   transition dipole (a.u.), with --dipole
-    Ω ≈ 0 with p ≈ 1 = one electron moved with a spin recoupling: dipole-dark from the reference root.
+      Ω        single-excitation character, Σ_σ ‖γ^σ‖² in the spin-orbital basis (Plasser 2014, Eq. 47; 1 for CIS)
+      CT       charge-transfer fraction: share of Ω with hole and electron on different fragments
+      PR_frag  fragments involved (participation ratio over fragments)
+      PR_NTO   NTO pairs needed to describe the transition (Eq. 59)
+      λ        NTO weights σ² (Plasser's λ_i, Σλ = Ω); σ itself is ORCA's printed NTO "n"
+      p        promotion number from the density difference: electrons actually moved (≈1 single, ≈2 double)
+      μ        transition dipole (a.u.) from the spin-traced γ, with --dipole
+    Ω = 0 with p ≈ 1 = one orbital changed but as a double substitution of spin orbitals (excitation +
+    spin recoupling): no one-electron transition density, dipole-dark from the reference root.
     """
     output_dir.mkdir(parents=True, exist_ok=True)
     cas = parse_orca_output(orca_out)
@@ -422,8 +424,8 @@ def electron_hole_map(
         _fail(f"no multiplicity {mult} block in {orca_out} (found {cas.mults})")
     typer.echo(f"   block mult {mult}, PT2 in output: {pt2 or 'none'}")
     typer.echo(
-        "   Ω one-electron character | CT charge-transfer fraction | PR fragment pairs involved | "
-        "σ NTO singular values | p electrons moved (density) | μ transition dipole"
+        "   Ω single-excitation character | CT charge-transfer fraction | PR_frag fragments involved | "
+        "PR_NTO NTO pairs involved | λ NTO weights (σ²) | p electrons moved (density) | μ transition dipole"
     )
 
     state = validate_json_file(wfn, "Wavefunction")
@@ -460,13 +462,21 @@ def electron_hole_map(
     summary, omegas, rdm = {}, {}, {}
     for i, j in pairs:
         td = TransitionDensity(ci[i], ci[j], cas.norb)
-        g = td.gamma()
+        g_spin = td.gamma_spin()
+        g = g_spin.sum(axis=0)  # spin-traced γ: dipole, NTOs
         d_ao = td.to_ao(c_act, g)  # rows = particle, cols = hole
-        om = omega_matrix(d_ao.T, s, frag)  # .T → rows = hole, cols = electron
+        # Ω_AB in the spin-orbital convention: α map + β map (Plasser 2014, Eq. 51); Σ_AB = Ω
+        om = sum(
+            omega_matrix(td.to_ao(c_act, gs).T, s, frag) for gs in g_spin
+        )  # rows = hole
         m = metrics(om)
-        nto = nto_info(g, c_act)
-        m["nto_lambdas"] = nto["lambdas"][:5].tolist()  # σ_k, ORCA's n
-        m["nto_weights"] = nto["weights"][:5].tolist()  # σ_k², sum = Ω
+        m["Omega_spin_traced"] = float(
+            (g * g).sum()
+        )  # ‖γ^α+γ^β‖², = 2Ω for singlet–singlet
+        nto = nto_info(g, c_act, omega=m["Omega"])
+        m["nto_sigma"] = nto["sigma"][:5].tolist()  # ORCA's n
+        m["nto_lambda"] = nto["lam"][:5].tolist()  # σ² (Plasser's λ)
+        m["PR_NTO"] = nto["pr_nto"]
         m["parsed_norms"] = list(td.parsed_norms)
         for r in (i, j):  # normalised 1-RDMs, cached per root
             if r not in rdm:
@@ -475,26 +485,6 @@ def electron_hole_map(
         ndo = ndo_info(rdm[j], rdm[i], c_act)
         m["ndo_kappa"] = ndo["kappa"][:6].tolist()
         m["promotion"] = ndo["p"]
-        if cubes:
-            k = min(cubes, cas.norb)
-            roles = ("hole", "particle")
-            names = [
-                f"{tag}nto_r{i}_r{j}_pair{p}_{role}_lam{nto['lambdas'][p]:.3f}"
-                for p in range(k)
-                for role in roles
-            ] + [
-                f"{tag}ndo_r{i}_r{j}_orb{p}_{'det' if ndo['kappa'][p] < 0 else 'att'}_kap{ndo['kappa'][p]:+.3f}"
-                for p in range(k)
-            ]
-            vecs = np.column_stack(
-                [nto[role][:, p] for p in range(k) for role in roles]
-                + [ndo["coeff"][:, :k]]
-            )
-            try:
-                write_orbital_cubes(state, vecs, names, output_dir / "cubes")
-                typer.echo(f"        {len(names)} cubes -> {output_dir / 'cubes'}")
-            except ImportError as exc:
-                typer.secho(f"⚠️  {exc}", fg=typer.colors.YELLOW)
         m["dE_casscf_eV"] = (cas_energy[j] - cas_energy[i]) * 27.2114
         if energy_pt2:
             m["dE_pt2_eV"] = (energy_pt2[j] - energy_pt2[i]) * 27.2114
@@ -512,13 +502,36 @@ def electron_hole_map(
         np.save(output_dir / f"{tag}gamma_{i}_{j}.npy", g)
         _write_omega_csv(output_dir / f"{tag}omega_{i}_{j}.csv", om, labels)
         typer.echo(
-            f"   {i}→{j}: Ω = {m['Omega']:.4f}  CT = {m['CT']:.2f}  PR = {m['PR']:.1f}  "
-            f"σ = {', '.join(f'{x:.3f}' for x in m['nto_lambdas'][:3])}  p = {m['promotion']:.2f}"
+            f"   {i}→{j}: Ω = {m['Omega']:.3f}  CT = {m['CT']:.2f}  PR_frag = {m['PR_frag']:.1f}  "
+            f"PR_NTO = {m['PR_NTO']:.1f}  λ = {', '.join(f'{x:.3f}' for x in m['nto_lambda'][:3])}  "
+            f"p = {m['promotion']:.2f}"
         )
         if dip is not None:
             typer.echo(
                 f"        μ = ({mu[0]:+.5f}, {mu[1]:+.5f}, {mu[2]:+.5f}) a.u.  |μ| = {np.linalg.norm(mu):.5f}"
             )
+        if cubes:
+            k = min(cubes, cas.norb)
+            roles = ("hole", "particle")
+            has_nto = m["Omega"] > 1e-6  # σ = 0 → NTO cubes would be noise
+            names = [
+                f"{tag}nto_r{i}_r{j}_pair{p}_{role}_sig{nto['sigma'][p]:.3f}"
+                for p in range(k)
+                for role in roles
+                if has_nto
+            ] + [
+                f"{tag}ndo_r{i}_r{j}_orb{p}_{'det' if ndo['kappa'][p] < 0 else 'att'}_kap{ndo['kappa'][p]:+.3f}"
+                for p in range(k)
+            ]
+            vecs = np.column_stack(
+                [nto[role][:, p] for p in range(k) for role in roles if has_nto]
+                + [ndo["coeff"][:, :k]]
+            )
+            try:
+                write_orbital_cubes(state, vecs, names, output_dir / "cubes")
+                typer.echo(f"        {len(names)} cubes -> {output_dir / 'cubes'}")
+            except ImportError as exc:
+                typer.secho(f"⚠️  {exc}", fg=typer.colors.YELLOW)
 
     with open(output_dir / f"{tag}summary.json", "w") as f:
         json.dump(
