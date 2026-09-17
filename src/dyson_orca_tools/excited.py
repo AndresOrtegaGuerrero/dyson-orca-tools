@@ -5,10 +5,22 @@ from pathlib import Path
 import numpy as np
 
 
-def nto_info(gamma: np.ndarray, c_act: np.ndarray) -> dict:
-    """lambdas = σ_k (ORCA's n), weights = σ_k²; hole/particle = AO coefficients, one column per pair."""
+def nto_info(gamma: np.ndarray, c_act: np.ndarray, omega: float | None = None) -> dict:
+    """NTOs of the (spin-traced) γ. sigma = singular values (ORCA's NTO n); lam = NTO weights,
+    σ² rescaled so that Σλ = omega (Plasser's λ_i in the spin-orbital convention) when omega is given;
+    pr_nto = (Σλ)²/Σλ² (NTO pairs involved); hole/particle = AO coefficients, one column per pair."""
     u, s, vt = np.linalg.svd(gamma)
-    return {"lambdas": s, "weights": s**2, "hole": c_act @ vt.T, "particle": c_act @ u}
+    lam = s**2
+    if omega is not None and lam.sum() > 1e-14:
+        lam = lam * (omega / lam.sum())
+    pr = float(lam.sum() ** 2 / (lam**2).sum()) if lam.sum() > 1e-6 else float("nan")
+    return {
+        "sigma": s,
+        "lam": lam,
+        "pr_nto": pr,
+        "hole": c_act @ vt.T,
+        "particle": c_act @ u,
+    }
 
 
 def ndo_info(g_state: np.ndarray, g_ground: np.ndarray, c_act: np.ndarray) -> dict:

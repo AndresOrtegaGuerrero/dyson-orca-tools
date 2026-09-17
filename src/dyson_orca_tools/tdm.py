@@ -34,16 +34,9 @@ class TransitionDensity:
         ket_norm = sum(abs(coeff) ** 2 for coeff in self.ket.values())
         return bra_norm, ket_norm
 
-    def gamma(self) -> np.ndarray:
-        """Compute the transition 1-RDM between two CAS CI vectors.
-
-        The returned matrix is defined as
-
-            gamma[p, q] = <bra | E_pq | ket>,
-
-        where E_pq = a†_p a_q and p, q refer to active spatial orbitals.
-        """
-        gamma = np.zeros((self.norb, self.norb))
+    def gamma_spin(self) -> np.ndarray:
+        """(2, norb, norb): γ^α and γ^β, γ^σ[t,u] = <bra| a†_tσ a_uσ |ket> over active spatial orbitals."""
+        gamma = np.zeros((2, self.norb, self.norb))
         for det, c_ket in self.ket.items():
             occ = occ_array(det)
             for q in np.flatnonzero(occ):  # a_q for occupied
@@ -54,8 +47,12 @@ class TransitionDensity:
                     s_p, occ_p = _flip(occ_q, p, 1)  # add electron to p
                     c_bra = self.bra.get(occ_p.tobytes())
                     if c_bra is not None:
-                        gamma[p // 2, q // 2] += s_q * s_p * c_bra * c_ket
+                        gamma[p % 2, p // 2, q // 2] += s_q * s_p * c_bra * c_ket
         return gamma
+
+    def gamma(self) -> np.ndarray:
+        """Spin-traced transition 1-RDM, γ = γ^α + γ^β (what a spin-free operator such as the dipole sees)."""
+        return self.gamma_spin().sum(axis=0)
 
     def to_ao(
         self, c_active: np.ndarray, gamma: np.ndarray | None = None

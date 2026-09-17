@@ -252,6 +252,35 @@ Check: `f_K` rebuilt from `μ_K` and the QD energies == ORCA's QD-NEVPT2 f.
 plus `orca_2json mol.gbw` with `mol.json.conf` = `{"MOCoefficients": true, "Basisset": true, "1elIntegrals": ["S"], "1elPropertyIntegrals": ["dipole"]}`. For the emitting state, repeat at the CASSCF-optimised geometry of that
 root.
 
+
+## 4. Status (16 Sep 2026) and next session
+
+Done on branch `eh_correlation` (all committed): steps 1–6 and 7a. Modules `tdm`, `ehmap`,
+`dipole`, `mixing`, `excited`; parsers `detect_pt2`, `parse_pt2_energies`, `parse_qdnevpt2`
+(per multiplicity block); CLI `dyson_orca_tools ehmap` with `--pair/--all-pairs/-f/--orbitals/
+--mult/--qd/--mixing/--dipole/--cubes`. Verified against ORCA: transition dipoles (|μ| within
+truncation), QD energies (eigenvalues of the printed H_eff), NTO `n` = σ (singular value).
+
+Findings on Eve (cas1414_s8t8, singlet block, QD-NEVPT2): QD 3 (1.89 eV, Ω = 1.68) = porphyrin
+Q state → the 2.0 eV emission; QD 1/2/4/5 = porphyrin one-electron excitations, spin-recoupled
+(Ω = 0, p ≈ 1), dark; QD 6/7 (2.76 eV, Ω = 0.73) = local excitation of each phenalenyl arm
+(one radical per arm, hence S₀/T₀ degenerate). No state below 2.7 eV lives on the arms, so the
+1.4 eV phena emission (tip on the arm) is not a neutral local excitation of this manifold;
+leading hypothesis: arm↔porphyrin charge-transfer state (weak, tip-dependent, screened on the
+surface) sitting above root 8 at the CASSCF level → run `nroots 16` (SC-NEVPT2 first), then
+`ehmap --all-pairs` and look for off-diagonal (ply ↔ porphyrin) cells; alternatives: charged
+molecule with 8 roots per block; isolated arm radical as energy reference.
+
+Next session (package refactor, then step 7b):
+* `workflows/` subpackage: `workflows/ehmap.py` with `run_ehmap`, `select_states`
+  (dataclass `States`: mult, pt2, qd, ci, energies, tag), `analyse_pair`; `io/tables.py` for the
+  CSV writers; `cli/main.py` keeps only options + one call per command (`ValueError` → `_fail`).
+  Verify by diffing `summary.json`/CSVs of a reference run before and after. Later the same for
+  `spectrum` (`workflows/spectrum.py`). Consider renaming engine `ehmap.py` → `fragments.py`.
+* Step 7b: orca_analysis station calling `run_ehmap` per multiplicity block (all-pairs table +
+  0→n maps), rendering `results/ehmap/cubes/*.cube` with the existing `render_cube`.
+* Step 2b still open: CASCI rerun with `TPrintWF 1e-6` to tighten the small numbers.
+
 ## References
 
 * F. Plasser, H. Lischka, *JCTC* **8**, 2777 (2012) — Ω_AB, CT numbers.

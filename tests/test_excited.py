@@ -13,8 +13,9 @@ CLOSED = {"[20]": 1.0}
 
 def test_nto_of_homo_lumo_singlet():
     info = nto_info(TransitionDensity(SINGLET, CLOSED, 2).gamma(), np.eye(2))
-    assert info["lambdas"][0] == pytest.approx(np.sqrt(2))
-    assert info["lambdas"][1] == pytest.approx(0, abs=1e-12)
+    assert info["sigma"][0] == pytest.approx(np.sqrt(2))
+    assert info["sigma"][1] == pytest.approx(0, abs=1e-12)
+    assert info["lam"][0] == pytest.approx(2.0) and info["pr_nto"] == pytest.approx(1.0)
     assert abs(info["hole"][0, 0]) == pytest.approx(1)  # hole in MO 0
     assert abs(info["particle"][1, 0]) == pytest.approx(1)  # electron in MO 1
 
@@ -42,6 +43,6 @@ def test_nto_lambdas_match_orca_n():
     )
     lam = nto_info(
         TransitionDensity(ci[0], ci[root], cas.norb).gamma(), np.eye(cas.norb)
-    )["lambdas"]
+    )["sigma"]
     print(f"mult {mult} root {root}: ours σ={lam[:3]}  ORCA n={n[:3]}")
     assert lam[0] == pytest.approx(n[0], rel=0.06)
