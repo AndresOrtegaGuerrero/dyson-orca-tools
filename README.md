@@ -13,53 +13,93 @@ pip install -e .
 
 ## Usage
 
+Three commands, in the order of a typical workflow:
+
 ```shell
-dyson_orca_tools -i initial.json -f final.json -p params.json
+# 1. build the parameters file from the ORCA outputs (CI vectors, root energies, active space)
+dyson_orca_tools prepare -i neutral/out.out \
+    -f cation/out.out:cation/mol.json \
+    -f anion/out.out:anion/mol.json \
+    -o results/params.json
+
+# 2. Dyson orbitals + multireference spectral function
+dyson_orca_tools spectrum -i neutral/mol.json -p results/params.json -o results \
+    --eta 0.05 [--shift E_F] [--cube] [--plot [--vertical]]
+
+# 3. re-plot later without recomputing
+dyson_orca_tools plot -o results --title "pentacene CASCI(12,12)" [--vertical]
 ```
 
-`params.json` should be a json file with the information containing the spin CI coefficients
+`spectrum` implements the spectral function of Kumar et al., *JACS* 2025, 147, 24993 (eq. 10):
 
-Sample input
+    ρ(ω) = η Σ_j |⟨Ψ±,j| a / a† |Ψ0⟩|² / ((ω − E_j)² + η²)
+
+one peak per charged root j, with its Dyson orbital ϱ±,j and strength ⟨ϱ|ϱ⟩.
+
+A single pair (one initial, one final state) is still available as
+`dyson_orca_tools dyson -i initial.json -f final.json -p params.json`.
+
+### `prepare`
+
+Reads the ORCA output of the initial state (`-i`) and of each N±1 calculation (`-f`, repeatable)
+and writes the parameters file. Each `-f` names the ORCA output; its `orca_2json` file is taken as
+`<name>.json` next to it, or given explicitly after a colon: `-f run/out.out:run/mol.json`.
+Every `MULT=` block of an output becomes one run, so one output with `mult 2,4` yields two runs.
+JSON paths are stored relative to the written parameters file.
+
+The ORCA inputs need `PrintWF det` and a small `TPrintWF` (e.g. `1e-6`) in `%casscf`;
+`prepare` prints Σc² per root so you can see how much the printout truncated.
+
+### `spectrum` outputs
+
+| file | content |
+|---|---|
+| `dyson_peaks.csv` | label, side (−/+), multiplicity, ω (eV), strength, branch (CASCI/CASSCF) |
+| `dyson_composition.csv` | per peak: strength, Σc² of the root, leading determinant, and d_p² for every active MO (HOMO−k / LUMO+k of the initial state); the d_p² sum to the strength |
+| `spectral_function.dat` | ω, ρ(ω) on a grid (`--omega-min/max`, `--npts`) |
+| `dyson_orbitals_ao.txt` | one column of AO coefficients per peak (ORCA AO order) |
+| `dyson_<side><j>_m<mult>.cube` | with `--cube`, needs `pip install -e .[cube]` (PySCF) |
+| `spectral_function.png/.pdf` | with `--plot`, needs `pip install -e .[plot]` (matplotlib) |
+
+Peaks are labelled ϱ−,j / ϱ+,j by increasing energy of the N±1 state within each side (j = 0 is the ground state of the ion); energies are relative to the
+initial ground state (removal negative, addition positive); `--shift` adds a rigid offset.
+
+### Orbitals: CASCI vs CASSCF
+
+The tool detects from the MO overlap whether initial and final states share their orbitals.
+With one orbital set (CASCI, `!MORead NoIter` with `ActOrbs/IntOrbs/ExtOrbs unchanged`) the
+Dyson orbital is a pure active-space object. With separately optimized CASSCF orbitals the
+non-orthogonal branch is used, including the relaxation of the inactive orbitals via the
+core-block determinant (Schur complement); `spectrum` prints that determinant per run.
+
+### Parameters file
+
+`initial` is the reference state (any charge/multiplicity); `final` is a list of runs, one per
+ORCA JSON (one orbital set and multiplicity), each with its roots. Energies in Hartree. Runs may
+differ from the initial state by ±1 electron and must change the multiplicity parity;
+spin-forbidden roots (|ΔS| ≠ ½) are accepted and give zero strength.
 
 ```json
 {
   "parameters": {
     "initial": {
-      "nelc": 4,
-      "norb": 4,
-      "mult": 1,
-      "charge": 0,
-      "spin_ci": {
-        "[2200]": 0.957520133,
-        "[2020]": -0.224387606,
-        "[dduu]": -0.018039314,
-        "[dudu]": -0.066820934,
-        "[uddu]": 0.084860248,
-        "[duud]": 0.084860248,
-        "[udud]": -0.066820934,
-        "[uudd]": -0.018039314,
-        "[0202]": -0.063982267
-      }
+      "nelc": 4, "norb": 4, "mult": 1, "energy": -230.5123,
+      "spin_ci": {"[2200]": 0.957520133, "[2020]": -0.224387606, "[0202]": -0.063982267}
     },
-    "final": {
-      "nelc": 5,
-      "norb": 4,
-      "mult": 2,
-      "charge": -1,
-      "spin_ci": {
-        "[02u2]": -0.051431580,
-        "[du2u]": 0.055430255,
-        "[ud2u]": -0.061033518,
-        "[uu2d]": 0.005603263,
-        "[20u2]": -0.052026571,
-        "[22u0]": 0.993890846
-      }
-    }
+    "final": [
+      {"file": "../anion/mol.json", "nelc": 5, "norb": 4, "mult": 2,
+       "roots": [
+         {"energy": -230.4901, "spin_ci": {"[22u0]": 0.993890846, "[20u2]": -0.052026571}},
+         {"energy": -230.4012, "spin_ci": {"[2u20]": 0.98}}
+       ]},
+      {"file": "../cation/mol.json", "nelc": 3, "norb": 4, "mult": 2,
+       "roots": [{"energy": -230.2410, "spin_ci": {"[2u00]": 0.97}}]}
+    ]
   }
 }
 ```
 
-
+The `dyson` command still accepts the old single-state format (`final` as one dict with `spin_ci`).
 
 ## 🧪 ORCA Instructions
 To extract the required data from your CASSCF or CASCI calculations in ORCA, you must use the utility program `orca_2json`.
