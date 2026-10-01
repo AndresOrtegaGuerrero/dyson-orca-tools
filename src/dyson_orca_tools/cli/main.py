@@ -159,6 +159,9 @@ def compute_spectrum(
     vertical: bool = typer.Option(
         False, "--vertical", help="Plot with the energy on the y axis."
     ),
+    legend_outside: bool = typer.Option(
+        False, "--legend-outside", help="Place the legend outside the axes."
+    ),
 ):
     """Multireference spectral function ρ(ω) = η Σ_j |ϱ_j|² / ((ω − E_j)² + η²)."""
     output_dir.mkdir(parents=True, exist_ok=True)
@@ -250,7 +253,7 @@ def compute_spectrum(
             _ok(f"{len(peaks)} cube files written.")
 
     if plot:
-        _plot_or_warn(output_dir, vertical=vertical)
+        _plot_or_warn(output_dir, vertical=vertical, legend_outside=legend_outside)
     _ok(
         f"Written to {output_dir}: dyson_peaks.csv, dyson_composition.csv, spectral_function.dat, dyson_orbitals_ao.txt"
     )
@@ -311,7 +314,12 @@ def prepare_parameters(
     _ok(f"written {output}")
 
 
-def _plot_or_warn(out_dir: Path, title: str | None = None, vertical: bool = False):
+def _plot_or_warn(
+    out_dir: Path,
+    title: str | None = None,
+    vertical: bool = False,
+    legend_outside: bool = False,
+):
     try:
         from ..io.plot import read_outputs, plot_spectrum
     except ImportError as exc:
@@ -326,6 +334,7 @@ def _plot_or_warn(out_dir: Path, title: str | None = None, vertical: bool = Fals
         eta=eta,
         title=title,
         orientation="vertical" if vertical else "horizontal",
+        legend="outside" if legend_outside else "inside",
     )
     _ok(f"plot written: {path} (+ .pdf)")
 
@@ -344,9 +353,12 @@ def plot_outputs(
     vertical: bool = typer.Option(
         False, "--vertical", help="Energy on the y axis (as in the paper's figures)."
     ),
+    legend_outside: bool = typer.Option(
+        False, "--legend-outside", help="Place the legend outside the axes."
+    ),
 ):
     """Re-plot a spectrum from the files written by `spectrum` (no recomputation)."""
-    _plot_or_warn(output_dir, title, vertical)
+    _plot_or_warn(output_dir, title, vertical, legend_outside)
 
 
 @app.command("ehmap")
