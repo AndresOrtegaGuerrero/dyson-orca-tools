@@ -107,12 +107,17 @@ def plot_spectrum(
     title=None,
     orientation="horizontal",
     figsize=None,
+    legend="inside",
 ):
     """ρ(ω) with removal side blue, addition side orange, peaks labelled ϱ±,j (strength).
-    orientation='vertical' puts the energy on the y axis (as in the paper's figures)."""
+    orientation='vertical' puts the energy on the y axis; legend='outside' moves the
+    legend off the axes (None drops it)."""
     omega, rho = np.asarray(omega), np.asarray(rho)
     vertical = orientation == "vertical"
-    figsize = figsize or ((2.6, 4.0) if vertical else (3.5, 2.5))
+    if figsize is None:  # an outside legend needs extra width beside a vertical plot
+        figsize = (
+            ((3.6 if legend == "outside" else 2.6), 4.0) if vertical else (3.5, 2.5)
+        )
     ymax = rho.max()
     x_lab, y_lab = r"$\omega - " + reference + r"$ (eV)", r"$\rho_s(\omega)$"
 
@@ -207,7 +212,23 @@ def plot_spectrum(
                     arrowprops=leader,
                 )
 
-        ax.legend(loc="center right" if vertical else "upper center", handlelength=1.2)
+        if legend == "outside":
+            # anchor the legend's inner edge to the axes edge (axes coordinates)
+            if vertical:
+                ax.legend(
+                    loc="center left", bbox_to_anchor=(1.0, 0.5), handlelength=1.2
+                )
+            else:
+                ax.legend(
+                    loc="lower center",
+                    bbox_to_anchor=(0.5, 1.0),
+                    ncol=2,
+                    handlelength=1.2,
+                )
+        elif legend == "inside":
+            ax.legend(
+                loc="center right" if vertical else "upper center", handlelength=1.2
+            )
         if eta:
             ax.text(
                 0.99,
