@@ -3,12 +3,20 @@ Python-based tool for computing Dyson orbitals from CASCI and CASSCF wavefunctio
 
 
 ## Installation
-To install the `dyson-orca-tools` package, follow these steps:
+
+```shell
+pip install dyson-orca-tools            # core: Dyson orbitals, spectral functions, e-h maps
+pip install "dyson-orca-tools[plot]"    # + matplotlib figures
+pip install "dyson-orca-tools[cube]"    # + PySCF cube files
+```
+
+For development, clone the repository and install it editable with the test tools:
 
 ```shell
 git clone https://github.com/AndresOrtegaGuerrero/dyson-orca-tools.git
 cd dyson-orca-tools
-pip install -e .
+pip install -e ".[dev,plot]"
+pre-commit install
 ```
 
 ## Usage
@@ -58,8 +66,8 @@ The ORCA inputs need `PrintWF det` and a small `TPrintWF` (e.g. `1e-6`) in `%cas
 | `dyson_composition.csv` | per peak: strength, Σc² of the root, leading determinant, and d_p² for every active MO (HOMO−k / LUMO+k of the initial state); the d_p² sum to the strength |
 | `spectral_function.dat` | ω, ρ(ω) on a grid (`--omega-min/max`, `--npts`) |
 | `dyson_orbitals_ao.txt` | one column of AO coefficients per peak (ORCA AO order) |
-| `dyson_<side><j>_m<mult>.cube` | with `--cube`, needs `pip install -e .[cube]` (PySCF) |
-| `spectral_function.png/.pdf` | with `--plot`, needs `pip install -e .[plot]` (matplotlib) |
+| `dyson_<side><j>_m<mult>.cube` | with `--cube`, needs `pip install "dyson-orca-tools[cube]"` (PySCF) |
+| `spectral_function.png/.pdf` | with `--plot`, needs `pip install "dyson-orca-tools[plot]"` (matplotlib) |
 
 Peaks are labelled ϱ−,j / ϱ+,j by increasing energy of the N±1 state within each side (j = 0 is the ground state of the ion); energies are relative to the
 initial ground state (removal negative, addition positive); `--shift` adds a rigid offset.
@@ -136,6 +144,16 @@ After that you can obtain json file from the calculations
 orca_2json mol.gbw
 ```
 
+
+## Releasing
+
+Releases are published to PyPI by GitHub Actions when a `v*` tag is pushed. From an up-to-date `main`:
+
+```shell
+bumpver update --patch    # or --minor / --major: bumps pyproject.toml + version.py, commits, tags and pushes
+```
+
+The `release` workflow then checks that the tag matches `dyson_orca_tools.__version__`, builds the sdist and wheel, uploads them to PyPI via trusted publishing, and creates a GitHub release with auto-generated notes.
 
 ## Contact
 
