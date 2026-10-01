@@ -16,7 +16,7 @@ authors = [
 readme = "README.md"
 license = {file = 'LICENSE'}
 classifiers = [
-    "Development Status :: 1 - Planning",
+    "Development Status :: 3 - Alpha",
     "License :: OSI Approved :: MIT License",
     "Operating System :: POSIX :: Linux",
     "Operating System :: MacOS :: MacOS X",
@@ -44,11 +44,15 @@ dev = [
 
 ]
 
+[project.urls]
+Homepage = "https://github.com/AndresOrtegaGuerrero/dyson-orca-tools"
+Issues = "https://github.com/AndresOrtegaGuerrero/dyson-orca-tools/issues"
+
 [project.scripts]
 dyson_orca_tools = 'dyson_orca_tools.cli.main:app'
 
 [tool.bumpver]
-current_version = "v0.0.1"
+current_version = "v0.1.0"
 version_pattern = "vMAJOR.MINOR.PATCH[PYTAGNUM]"
 commit_message = "Bump version {old_version} -> {new_version}."
 tag_message = "Release {new_version}."
@@ -60,6 +64,9 @@ tag = true
 push = true
 
 [tool.bumpver.file_patterns]
-"cubehandler/version.py" = [
+"pyproject.toml" = [
+    'current_version = "{version}"',
+]
+"src/dyson_orca_tools/version.py" = [
     '__version__ = "{pep440_version}"',
 ]
