@@ -103,6 +103,7 @@ def plot_spectrum(
     path,
     eta=None,
     label_threshold=0.0,
+    label_energy=False,
     reference="E_0",
     title=None,
     orientation="horizontal",
@@ -185,6 +186,8 @@ def plot_spectrum(
         for p, slot in zip(shown, slots):
             side, j = p.label.split(",")
             text = rf"$\varrho_{{{side},{j}}}$ ({p.strength:.2f})"
+            if label_energy:
+                text += f" @ {p.omega:+.2f} eV"
             height = np.interp(p.omega, omega, rho)
             if vertical:
                 ax.annotate(
