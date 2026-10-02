@@ -162,6 +162,14 @@ def compute_spectrum(
     legend_outside: bool = typer.Option(
         False, "--legend-outside", help="Place the legend outside the axes."
     ),
+    label_threshold: float = typer.Option(
+        0.0,
+        "--label-threshold",
+        help="Label only peaks with strength >= this (curves keep all roots).",
+    ),
+    label_energy: bool = typer.Option(
+        False, "--label-energy", help="Append ω − E_0 (eV) to each peak label."
+    ),
 ):
     """Multireference spectral function ρ(ω) = η Σ_j |ϱ_j|² / ((ω − E_j)² + η²)."""
     output_dir.mkdir(parents=True, exist_ok=True)
@@ -253,7 +261,13 @@ def compute_spectrum(
             _ok(f"{len(peaks)} cube files written.")
 
     if plot:
-        _plot_or_warn(output_dir, vertical=vertical, legend_outside=legend_outside)
+        _plot_or_warn(
+            output_dir,
+            vertical=vertical,
+            legend_outside=legend_outside,
+            label_threshold=label_threshold,
+            label_energy=label_energy,
+        )
     _ok(
         f"Written to {output_dir}: dyson_peaks.csv, dyson_composition.csv, spectral_function.dat, dyson_orbitals_ao.txt"
     )
@@ -319,6 +333,8 @@ def _plot_or_warn(
     title: str | None = None,
     vertical: bool = False,
     legend_outside: bool = False,
+    label_threshold: float = 0.0,
+    label_energy: bool = False,
 ):
     try:
         from ..io.plot import read_outputs, plot_spectrum
@@ -333,6 +349,8 @@ def _plot_or_warn(
         out_dir / "spectral_function.png",
         eta=eta,
         title=title,
+        label_threshold=label_threshold,
+        label_energy=label_energy,
         orientation="vertical" if vertical else "horizontal",
         legend="outside" if legend_outside else "inside",
     )
@@ -356,9 +374,19 @@ def plot_outputs(
     legend_outside: bool = typer.Option(
         False, "--legend-outside", help="Place the legend outside the axes."
     ),
+    label_threshold: float = typer.Option(
+        0.0,
+        "--label-threshold",
+        help="Label only peaks with strength >= this (curves keep all roots).",
+    ),
+    label_energy: bool = typer.Option(
+        False, "--label-energy", help="Append ω − E_0 (eV) to each peak label."
+    ),
 ):
     """Re-plot a spectrum from the files written by `spectrum` (no recomputation)."""
-    _plot_or_warn(output_dir, title, vertical, legend_outside)
+    _plot_or_warn(
+        output_dir, title, vertical, legend_outside, label_threshold, label_energy
+    )
 
 
 @app.command("ehmap")
