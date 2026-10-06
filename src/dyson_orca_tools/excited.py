@@ -32,9 +32,12 @@ def ndo_info(g_state: np.ndarray, g_ground: np.ndarray, c_act: np.ndarray) -> di
 
 
 def write_orbital_cubes(
-    state: dict, coeffs: np.ndarray, names: list[str], outdir, margin=14.0
+    state: dict, coeffs: np.ndarray, names: list[str], outdir, **grid
 ):
-    """One cube per column of coeffs (AO, ORCA order); needs the [cube] extra."""
+    """One cube per column of coeffs (AO, ORCA order); needs the [cube] extra.
+
+    ``grid`` (nx, ny, nz, resolution, margin) is passed on to ``write_cube``.
+    """
     from .io.cube import write_cube  # ImportError -> caller warns and skips
 
     outdir = Path(outdir)
@@ -42,5 +45,5 @@ def write_orbital_cubes(
     paths = []
     for k, name in enumerate(names):
         paths.append(outdir / f"{name}.cube")
-        write_cube(state, coeffs[:, k], str(paths[-1]), margin=margin)
+        write_cube(state, coeffs[:, k], str(paths[-1]), **grid)
     return paths
