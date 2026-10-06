@@ -54,13 +54,45 @@ def _fail(msg):
     raise typer.Exit(1)
 
 
-def _write_cube_or_warn(state: dict, coeff_ao, filename: Path):
+# cube grid, shared by every command that writes cubes (lengths in Bohr, as in PySCF)
+CUBE_POINTS = typer.Option(
+    "80", "--cube-points", help="Cube grid points: N or NX,NY,NZ."
+)
+CUBE_SPACING = typer.Option(
+    None,
+    "--cube-spacing",
+    help="Approximate cube grid spacing (Bohr); overrides --cube-points.",
+)
+CUBE_MARGIN = typer.Option(
+    14.0, "--cube-margin", help="Cube box padding around the molecule (Bohr)."
+)
+
+
+def _cube_grid(points: str, spacing: float | None, margin: float) -> dict:
+    """CLI grid options -> keyword arguments of ``write_cube``."""
+    try:
+        n = [int(x) for x in points.split(",")]
+    except ValueError:
+        _fail(f"--cube-points: '{points}' is not N or NX,NY,NZ")
+    if len(n) == 1:
+        n = n * 3
+    if len(n) != 3 or min(n) < 2:
+        _fail(f"--cube-points: '{points}' needs 1 or 3 integers >= 2")
+    if spacing is not None and spacing <= 0:
+        _fail("--cube-spacing must be positive")
+    if margin < 0:
+        _fail("--cube-margin must be >= 0")
+    nx, ny, nz = n
+    return {"nx": nx, "ny": ny, "nz": nz, "resolution": spacing, "margin": margin}
+
+
+def _write_cube_or_warn(state: dict, coeff_ao, filename: Path, grid: dict):
     try:
         from ..io.cube import write_cube
     except ImportError as exc:
         typer.secho(f"⚠️  {exc}", fg=typer.colors.YELLOW)
         return False
-    write_cube(state, coeff_ao, str(filename))
+    write_cube(state, coeff_ao, str(filename), **grid)
     return True
 
 
@@ -81,8 +113,12 @@ def compute_dyson_orbital(
     cube: bool = typer.Option(
         True, "--cube/--no-cube", help="Write a cube file (needs the [cube] extra)."
     ),
+    cube_points: str = CUBE_POINTS,
+    cube_spacing: float = CUBE_SPACING,
+    cube_margin: float = CUBE_MARGIN,
 ):
     """Dyson orbital between one initial and one final state."""
+    grid = _cube_grid(cube_points, cube_spacing, cube_margin) if cube else None
     output_dir.mkdir(parents=True, exist_ok=True)
 
     initial_wfn_data = validate_json_file(initial_wfn, "Initial")
@@ -113,7 +149,7 @@ def compute_dyson_orbital(
         header="Dyson orbital, AO coefficients (ORCA order)",
     )
     if cube and _write_cube_or_warn(
-        initial_wfn_data, dyson_ao, output_dir / "dyson_orbital.cube"
+        initial_wfn_data, dyson_ao, output_dir / "dyson_orbital.cube", grid
     ):
         _ok(f"cube written: {output_dir / 'dyson_orbital.cube'}")
     typer.secho("🚀 Dyson orbital computed successfully!", fg=typer.colors.CYAN)
@@ -151,6 +187,9 @@ def compute_spectrum(
         "--cube/--no-cube",
         help="Write one cube per peak (needs the [cube] extra).",
     ),
+    cube_points: str = CUBE_POINTS,
+    cube_spacing: float = CUBE_SPACING,
+    cube_margin: float = CUBE_MARGIN,
     plot: bool = typer.Option(
         False,
         "--plot/--no-plot",
@@ -172,6 +211,7 @@ def compute_spectrum(
     ),
 ):
     """Multireference spectral function ρ(ω) = η Σ_j |ϱ_j|² / ((ω − E_j)² + η²)."""
+    grid = _cube_grid(cube_points, cube_spacing, cube_margin) if cube else None
     output_dir.mkdir(parents=True, exist_ok=True)
 
     initial_wfn_data = validate_json_file(initial_wfn, "Initial")
@@ -255,7 +295,7 @@ def compute_spectrum(
     if cube:
         for p in peaks:
             name = output_dir / f"dyson_{p.side}{p.label.split(',')[1]}_m{p.mult}.cube"
-            if not _write_cube_or_warn(initial_wfn_data, p.coeff_ao, name):
+            if not _write_cube_or_warn(initial_wfn_data, p.coeff_ao, name, grid):
                 break
         else:
             _ok(f"{len(peaks)} cube files written.")
@@ -429,6 +469,9 @@ def electron_hole_map(
         "--cubes",
         help="Cubes for the top N NTO pairs and N NDOs per pair (needs the [cube] extra).",
     ),
+    cube_points: str = CUBE_POINTS,
+    cube_spacing: float = CUBE_SPACING,
+    cube_margin: float = CUBE_MARGIN,
     dipole: bool = typer.Option(
         False,
         "--dipole",
@@ -450,6 +493,7 @@ def electron_hole_map(
     Ω = 0 with p ≈ 1 = one orbital changed but as a double substitution of spin orbitals (excitation +
     spin recoupling): no one-electron transition density, dipole-dark from the reference root.
     """
+    grid = _cube_grid(cube_points, cube_spacing, cube_margin) if cubes else None
     output_dir.mkdir(parents=True, exist_ok=True)
     cas = parse_orca_output(orca_out)
     text = Path(orca_out).read_text()
@@ -568,7 +612,7 @@ def electron_hole_map(
                 + [ndo["coeff"][:, :k]]
             )
             try:
-                write_orbital_cubes(state, vecs, names, output_dir / "cubes")
+                write_orbital_cubes(state, vecs, names, output_dir / "cubes", **grid)
                 typer.echo(f"        {len(names)} cubes -> {output_dir / 'cubes'}")
             except ImportError as exc:
                 typer.secho(f"⚠️  {exc}", fg=typer.colors.YELLOW)

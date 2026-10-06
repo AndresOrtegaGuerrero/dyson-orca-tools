@@ -50,8 +50,20 @@ def pyscf_molecule(state: dict):
     return mol
 
 
-def write_cube(state: dict, coeff_ao, filename: str, margin: float = 14.0):
-    """Write AO coefficients (ORCA ordering) as a cube file on the state's geometry."""
+def write_cube(
+    state: dict,
+    coeff_ao,
+    filename: str,
+    margin: float = 14.0,
+    nx: int = 80,
+    ny: int = 80,
+    nz: int = 80,
+    resolution: float | None = None,
+):
+    """Write AO coefficients (ORCA ordering) as a cube file on the state's geometry.
+
+    Lengths in Bohr; ``resolution`` (grid spacing) overrides ``nx, ny, nz``.
+    """
     mol = pyscf_molecule(state)
     orca_labels = [
         orca_label_to_pyscf(lbl)
@@ -59,4 +71,13 @@ def write_cube(state: dict, coeff_ao, filename: str, margin: float = 14.0):
     ]
     pyscf_labels = ["".join(lbl.split()) for lbl in mol.ao_labels()]
     reordered = [coeff_ao[orca_labels.index(lbl)] for lbl in pyscf_labels]
-    cubegen.orbital(mol, filename, reordered, margin=margin)
+    cubegen.orbital(
+        mol,
+        filename,
+        reordered,
+        nx=nx,
+        ny=ny,
+        nz=nz,
+        resolution=resolution,
+        margin=margin,
+    )

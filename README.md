@@ -66,11 +66,23 @@ The ORCA inputs need `PrintWF det` and a small `TPrintWF` (e.g. `1e-6`) in `%cas
 | `dyson_composition.csv` | per peak: strength, Σc² of the root, leading determinant, and d_p² for every active MO (HOMO−k / LUMO+k of the initial state); the d_p² sum to the strength |
 | `spectral_function.dat` | ω, ρ(ω) on a grid (`--omega-min/max`, `--npts`) |
 | `dyson_orbitals_ao.txt` | one column of AO coefficients per peak (ORCA AO order) |
-| `dyson_<side><j>_m<mult>.cube` | with `--cube`, needs `pip install "dyson-orca-tools[cube]"` (PySCF) |
+| `dyson_<side><j>_m<mult>.cube` | with `--cube`, needs `pip install "dyson-orca-tools[cube]"` (PySCF); grid via `--cube-points/--cube-spacing/--cube-margin` (see below) |
 | `spectral_function.png/.pdf` | with `--plot`, needs `pip install "dyson-orca-tools[plot]"` (matplotlib) |
 
 Peaks are labelled ϱ−,j / ϱ+,j by increasing energy of the N±1 state within each side (j = 0 is the ground state of the ion); energies are relative to the
 initial ground state (removal negative, addition positive); `--shift` adds a rigid offset.
+
+### Cube grid
+
+`dyson`, `spectrum --cube` and `ehmap --cubes` share three grid options (lengths in Bohr):
+
+| option | default | meaning |
+|---|---|---|
+| `--cube-points` | `80` | points per axis: `N` or `NX,NY,NZ` |
+| `--cube-spacing` | – | approximate grid spacing (PySCF rounds it to fit the box); overrides `--cube-points` |
+| `--cube-margin` | `14.0` | padding around the molecule |
+
+e.g. `--cube-points 60,60,120 --cube-margin 6` or `--cube-spacing 0.2`.
 
 ### Orbitals: CASCI vs CASSCF
 
