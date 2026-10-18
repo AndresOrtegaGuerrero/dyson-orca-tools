@@ -272,9 +272,9 @@ def compute_spectrum(
                 ]
             )
 
-    grid = omega_grid(peaks, npts=npts)
-    lo = grid[0] if omega_min is None else omega_min
-    hi = grid[-1] if omega_max is None else omega_max
+    omegas = omega_grid(peaks, npts=npts)
+    lo = omegas[0] if omega_min is None else omega_min
+    hi = omegas[-1] if omega_max is None else omega_max
     omega = np.linspace(lo, hi, npts)
     rho = spectral_function(peaks, omega, eta=eta)
     np.savetxt(
