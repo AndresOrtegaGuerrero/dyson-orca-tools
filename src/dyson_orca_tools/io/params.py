@@ -72,7 +72,7 @@ class Parameters:
 
 
 # ----------------------------------------------------------------- validation
-def _check_determinants(spin_ci: dict, norb: int, nelc: int, where: str):
+def _check_determinants(spin_ci: dict, norb: int, nelc: int, mult: int, where: str):
     for det in spin_ci:
         s = det.strip("[]")
         if len(s) != norb:
@@ -80,6 +80,9 @@ def _check_determinants(spin_ci: dict, norb: int, nelc: int, where: str):
         n = 2 * s.count("2") + s.count("u") + s.count("d")
         if n != nelc:
             raise ValueError(f"{where}: '{det}' has {n} electrons, expected {nelc}")
+        two_ms = s.count("u") - s.count("d")
+        if two_ms != mult - 1:
+            raise ValueError(f"{where}: '{det}' has 2m_s={two_ms}, expected {mult - 1}")
 
 
 def _require(d: dict, keys, where: str):
@@ -90,7 +93,7 @@ def _require(d: dict, keys, where: str):
 
 def validate(params: Parameters):
     ini = params.initial
-    _check_determinants(ini.spin_ci, ini.norb, ini.nelc, "initial")
+    _check_determinants(ini.spin_ci, ini.norb, ini.nelc, ini.mult, "initial")
     if not params.runs:
         raise ValueError("final: no charged runs given")
 
@@ -109,7 +112,9 @@ def validate(params: Parameters):
         for j, root in enumerate(run.roots):
             if not root.spin_ci:
                 raise ValueError(f"{where}.roots[{j}]: empty spin_ci")
-            _check_determinants(root.spin_ci, run.norb, run.nelc, f"{where}.roots[{j}]")
+            _check_determinants(
+                root.spin_ci, run.norb, run.nelc, run.mult, f"{where}.roots[{j}]"
+            )
 
 
 # -------------------------------------------------------------------- loading

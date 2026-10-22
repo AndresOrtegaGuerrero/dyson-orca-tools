@@ -1,5 +1,6 @@
 import numpy as np
 import pytest
+import copy
 
 from dyson_orca_tools.io.params import parse_parameters
 from dyson_orca_tools.spectral import (
@@ -79,3 +80,16 @@ def test_missing_energy_is_rejected(readme_v2):
     initial, params = _load(readme_v2)
     with pytest.raises(ValueError, match="energy"):
         build_peaks(initial, params)
+
+
+def test_readme_v2_parses(readme_v2):
+    params = parse_parameters(readme_v2)
+    assert params.initial.mult == 1
+    assert [run.mult for run in params.runs] == [2, 2]
+
+
+def test_determinant_ms_must_match_mult(readme_v2):
+    raw = copy.deepcopy(readme_v2)
+    raw["parameters"]["final"][0]["mult"] = 4  # doublet strings declared quartet
+    with pytest.raises(ValueError, match="2m_s"):
+        parse_parameters(raw)

@@ -74,3 +74,13 @@ def test_mo_weights_sum_to_strength(pair):
     mo = d.dyson_mo_coefficients()
     assert float(mo @ mo) == pytest.approx(d.strength(d.dyson_orbital(mo)))
     assert d.active_labels() == ["HOMO-1", "HOMO", "LUMO", "LUMO+1"]
+
+
+def test_mult_comes_from_parameters_not_json(pair):
+    initial, final = pair
+    reference = Dyson(initial, final, _params(README_ANION)).dyson_orbital()
+
+    wrong = copy.deepcopy(final)
+    wrong["Molecule"]["Multiplicity"] = 4
+    d = Dyson(initial, wrong, _params(README_ANION))
+    np.testing.assert_almost_equal(d.dyson_orbital(), reference)
