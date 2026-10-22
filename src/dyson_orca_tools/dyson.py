@@ -26,8 +26,9 @@ class Dyson:
 
         # <φ_i^initial | φ_j^final>
         self.s_matrix_mo = self.get_s_matrix_mo()
-        self.mult_initial = self.initial["Molecule"]["Multiplicity"]
-        self.mult_final = self.final["Molecule"]["Multiplicity"]
+
+        self.mult_initial = self.parameters["parameters"]["initial"]["mult"]
+        self.mult_final = self.parameters["parameters"]["final"]["mult"]
 
         self.num_inactive_orbs = sum(
             orb["Occupancy"] == 2.0

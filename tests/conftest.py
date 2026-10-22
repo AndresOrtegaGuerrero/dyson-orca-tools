@@ -19,6 +19,7 @@ def fake_state(
         "Molecule": {
             "Multiplicity": mult,
             "Charge": charge,
+            "Atoms": [],
             "S-Matrix": S.tolist(),
             "MolecularOrbitals": {"MOs": mos},
         }
