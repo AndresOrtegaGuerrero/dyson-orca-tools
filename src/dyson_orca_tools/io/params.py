@@ -25,6 +25,8 @@ class State:
     mult: int
     spin_ci: dict
     energy: float | None = None
+    label: str = ""
+    root: int | None = None
 
 
 @dataclass
@@ -45,21 +47,26 @@ class ChargedRun:
 
 @dataclass
 class Parameters:
-    initial: State
+    initials: list[State]
     runs: list[ChargedRun]
+
+    @property
+    def initial(self) -> State:
+        return self.initials[0]
 
     def is_removal(self, run: ChargedRun) -> bool:
         return run.nelc < self.initial.nelc
 
-    def pair(self, run: ChargedRun, root: Root) -> dict:
+    def pair(self, run: ChargedRun, root: Root, initial: State | None = None) -> dict:
+        initial = initial or self.initial
         """Legacy dict consumed by ``Dyson`` for one (initial, root) pair."""
         return {
             "parameters": {
                 "initial": {
-                    "nelc": self.initial.nelc,
-                    "norb": self.initial.norb,
-                    "mult": self.initial.mult,
-                    "spin_ci": self.initial.spin_ci,
+                    "nelc": initial.nelc,
+                    "norb": initial.norb,
+                    "mult": initial.mult,
+                    "spin_ci": initial.spin_ci,
                 },
                 "final": {
                     "nelc": run.nelc,
@@ -92,10 +99,22 @@ def _require(d: dict, keys, where: str):
 
 
 def validate(params: Parameters):
-    ini = params.initial
-    _check_determinants(ini.spin_ci, ini.norb, ini.nelc, ini.mult, "initial")
+    if not params.initials:
+        raise ValueError("initial: no reference states given")
     if not params.runs:
         raise ValueError("final: no charged runs given")
+
+    ini = params.initial
+    labels = set()
+
+    for i, state in enumerate(params.initials):
+        where = f"initial[{i}]"
+        if (state.nelc, state.norb) != (ini.nelc, ini.norb):
+            raise ValueError(f"{where}: nelc/norb must match initial[0]")
+        if state.label in labels:
+            raise ValueError(f"{where}: duplicate label '{state.label}'")
+        labels.add(state.label)
+        _check_determinants(state.spin_ci, state.norb, state.nelc, state.mult, where)
 
     for i, run in enumerate(params.runs):
         where = f"final[{i}]"
@@ -130,22 +149,36 @@ def _parse_run(raw: dict, where: str) -> ChargedRun:
     return ChargedRun(raw["nelc"], raw["norb"], raw["mult"], roots, file=file)
 
 
+def _parse_state(raw: dict, where: str) -> State:
+    _require(raw, ["nelc", "norb", "mult", "spin_ci"], where)
+    root = raw.get("root")
+    label = raw.get("label") or (
+        f"m{raw['mult']}r{root}" if root is not None else f"m{raw['mult']}"
+    )
+    return State(
+        raw["nelc"],
+        raw["norb"],
+        raw["mult"],
+        raw["spin_ci"],
+        raw.get("energy"),
+        label,
+        root,
+    )
+
+
 def parse_parameters(raw: dict) -> Parameters:
     """Dict (v1 or v2) -> Parameters. Does not touch the filesystem."""
     _require(raw, ["parameters"], "root")
     p = raw["parameters"]
     _require(p, ["initial", "final"], "parameters")
-    _require(p["initial"], ["nelc", "norb", "mult", "spin_ci"], "initial")
 
-    ini = p["initial"]
-    initial = State(
-        ini["nelc"], ini["norb"], ini["mult"], ini["spin_ci"], ini.get("energy")
-    )
+    inis = p["initial"] if isinstance(p["initial"], list) else [p["initial"]]
+    initials = [_parse_state(r, f"initial[{i}]") for i, r in enumerate(inis)]
 
     finals = p["final"] if isinstance(p["final"], list) else [p["final"]]
     runs = [_parse_run(r, f"final[{i}]") for i, r in enumerate(finals)]
 
-    params = Parameters(initial, runs)
+    params = Parameters(initials, runs)
     validate(params)
     return params
 

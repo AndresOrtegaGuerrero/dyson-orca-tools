@@ -56,6 +56,8 @@ def test_forbidden_spin_has_zero_strength(readme_v2):
     assert [p for p in peaks if p.side == "-"][0].strength == pytest.approx(
         0.0, abs=1e-12
     )
+    kept = build_peaks(initial, params, min_strength=1e-8)
+    assert not [p for p in kept if p.mult == 4]
 
 
 def test_non_orthogonal_pair_takes_casscf_branch(readme_v2):
@@ -93,3 +95,27 @@ def test_determinant_ms_must_match_mult(readme_v2):
     raw["parameters"]["final"][0]["mult"] = 4  # doublet strings declared quartet
     with pytest.raises(ValueError, match="2m_s"):
         parse_parameters(raw)
+
+
+def test_two_initials_give_two_spectra(readme_v3):
+    initial, params = _load(readme_v3)
+    peaks = build_peaks(initial, params)
+    by_init = {lab: [p for p in peaks if p.initial == lab] for lab in ("m1", "T1")}
+    assert len(by_init["m1"]) == len(by_init["T1"]) == 3  # 3 roots in the fixture
+    assert [p.label for p in by_init["m1"] if p.side == "-"] == ["-,0"]
+    assert [p.label for p in by_init["T1"] if p.side == "-"] == ["-,0"]
+
+
+def test_single_initial_peaks_unchanged(readme_v2):
+    # labels and energies exactly as before PR 2
+    initial, params = _load(readme_v2)
+    labels = [(p.initial, p.label) for p in build_peaks(initial, params)]
+    assert labels == [("m1", "-,0"), ("m1", "+,0"), ("m1", "+,1")]
+
+
+def test_omega_is_relative_to_each_initial(readme_v3):
+    initial, params = _load(readme_v3)
+    peaks = build_peaks(initial, params)
+    anion0 = {p.initial: p.omega for p in peaks if p.side == "+" and p.label == "+,0"}
+    # T1 sits 0.1 Eh above S0 in the fixture, so its addition peak is 0.1 Eh lower
+    assert anion0["m1"] - anion0["T1"] == pytest.approx(0.1 * HARTREE_EV)
