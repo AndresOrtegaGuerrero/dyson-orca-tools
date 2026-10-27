@@ -18,7 +18,15 @@ from ..io.orca_output import (
 )
 from ..mixing import mixing_matrix, overlap_matrix, composition
 from ..excited import nto_info, ndo_info, write_orbital_cubes
-from ..spectral import build_peaks, spectral_function, omega_grid, relabel, HARTREE_EV
+from ..spectral import (
+    build_peaks,
+    spectral_function,
+    omega_grid,
+    relabel,
+    midgap,
+    shift_peaks,
+    HARTREE_EV,
+)
 
 from ..tdm import TransitionDensity
 from ..dipole import (
@@ -182,6 +190,17 @@ def compute_spectrum(
         "--shift",
         help="Rigid shift added to all peak energies (eV), e.g. to align E_F.",
     ),
+    shift_removal: float = typer.Option(
+        0.0, "--shift-removal", help="Extra shift (eV) for removal peaks only."
+    ),
+    shift_addition: float = typer.Option(
+        0.0, "--shift-addition", help="Extra shift (eV) for addition peaks only."
+    ),
+    align_fermi: bool = typer.Option(
+        False,
+        "--align-fermi",
+        help="Put ω = 0 at the midgap of the ground-state reference, so ω > 0 is electron addition.",
+    ),
     cube: bool = typer.Option(
         False,
         "--cube/--no-cube",
@@ -207,7 +226,9 @@ def compute_spectrum(
         help="Label only peaks with strength >= this (curves keep all roots).",
     ),
     label_energy: bool = typer.Option(
-        False, "--label-energy", help="Append ω − E_0 (eV) to each peak label."
+        False,
+        "--label-energy",
+        help="Append ω (eV, relative to the chosen zero) to each peak label.",
     ),
     common_reference: bool = typer.Option(
         False,
@@ -251,16 +272,36 @@ def compute_spectrum(
     # energy_zero: each reference state has its own zero, unless --common-reference
     e0 = min(s.energy for s in params.initials)
     de_ref = {s.label: (s.energy - e0) * HARTREE_EV for s in params.initials}
-    for p in peaks:
-        p.omega += shift + (de_ref[p.initial] if common_reference else 0.0)
+    ground = min(params.initials, key=lambda s: s.energy).label
 
+    if common_reference:
+        for p in peaks:
+            p.omega += de_ref[p.initial]
+
+    mu = 0.0
+    if align_fermi:
+        try:
+            mu = midgap(peaks, ground)
+        except ValueError as exc:
+            _fail(f"Cannot align Fermi level: {exc}")
+        _ok(f"Midgap of '{ground}': μ = {mu:.3f} eV; ω → ω − μ.")
+    shift_peaks(
+        peaks,
+        mu=mu,
+        shift=shift,
+        shift_removal=shift_removal,
+        shift_addition=shift_addition,
+    )
     labels = [s.label for s in params.initials]
     opts = dict(
         eta=eta,
         omega_min=omega_min,
         omega_max=omega_max,
         npts=npts,
-        shift=shift,
+        zero_note=(
+            f"mu = {mu:.4f} eV, shift = {shift} eV, shift_removal = {shift_removal} eV, "
+            f"shift_addition = {shift_addition} eV, common_reference = {common_reference}"
+        ),
         plot=plot,
         vertical=vertical,
         legend_outside=legend_outside,
@@ -324,7 +365,7 @@ def _write_spectrum(
     omega_min,
     omega_max,
     npts,
-    shift,
+    zero_note,
     grid,
     plot,
     vertical,
@@ -366,7 +407,7 @@ def _write_spectrum(
     np.savetxt(
         out_dir / "spectral_function.dat",
         np.column_stack([omega, rho]),
-        header=f"omega_eV  rho   (eta = {eta} eV, shift = {shift} eV)",
+        header=f"omega_eV  rho   (eta = {eta} eV, {zero_note})",
     )
 
     coeffs = np.column_stack([p.coeff_ao for p in peaks])
@@ -529,7 +570,9 @@ def plot_outputs(
         help="Label only peaks with strength >= this (curves keep all roots).",
     ),
     label_energy: bool = typer.Option(
-        False, "--label-energy", help="Append ω − E_0 (eV) to each peak label."
+        False,
+        "--label-energy",
+        help="Append ω (eV, relative to the chosen zero) to each peak label.",
     ),
 ):
     """Re-plot a spectrum from the files written by `spectrum` (no recomputation)."""
