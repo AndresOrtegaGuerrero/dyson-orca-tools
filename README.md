@@ -96,12 +96,14 @@ charged runs must differ from it by one electron and change the multiplicity par
 | `-p FILE` | | parameters file from `prepare` |
 | `-o DIR` | `.` | output folder (layout below) |
 | `--eta` | `0.05` | Lorentzian broadening (eV) |
-| `--shift` | `0` | rigid shift of all peak energies (eV), e.g. to align E_F |
+| `--shift` | `0` | rigid shift of all peak energies (eV) |
+| `--shift-removal`, `--shift-addition` | `0` | extra shift (eV) of one branch only, e.g. to anchor the first removal/addition peak to the measured PIR/NIR |
+| `--align-fermi` | off | put ω = 0 at the midgap of the ground-state reference, so ω > 0 is electron addition (see below) |
 | `--common-reference` | off | measure every spectrum from the lowest reference energy instead of from its own reference state |
 | `--min-strength` | `1e-8` | drop peaks below this strength (spin-forbidden ones) before labelling |
 | `--omega-min/--omega-max/--npts` | peaks ± 1 eV, 2000 | grid of ρ(ω) |
 | `--cube` | off | one cube per peak (needs `[cube]`); grid options below |
-| `--plot`, `--vertical`, `--legend-outside`, `--label-threshold S`, `--label-energy` | off | figure (needs `[plot]`): energy on the y axis, legend outside, label only peaks with strength ≥ S, append ω − E_0 to the labels |
+| `--plot`, `--vertical`, `--legend-outside`, `--label-threshold S`, `--label-energy` | off | figure (needs `[plot]`): energy on the y axis, legend outside, label only peaks with strength ≥ S, append ω (relative to the chosen zero) to the labels |
 
 ### `spectrum` — output layout
 
@@ -134,9 +136,18 @@ Each leaf folder contains:
 | `spectral_function.png/.pdf` | with `--plot` |
 
 Peaks are labelled ϱ−,j / ϱ+,j by increasing energy of the N±1 state within each side (j = 0 is
-the ground state of the ion), numbered separately in every folder. Energies are relative to the
-reference state the electron is removed from or added to (removal negative, addition positive);
-with `--common-reference` all spectra share the lowest reference energy as zero, and the console
+the ground state of the ion), numbered separately in every folder.
+
+Peak energies are the poles of the one-particle Green's function: removal at ω = E_N − E_{N−1}
+(= −IP) and addition at ω = E_{N+1} − E_N (= −EA), both measured from the reference state the
+electron is removed from or added to, i.e. the vacuum level (as in Kumar et al., JACS 2025, 147,
+24993, Fig. 2b/6b). Both branches are therefore usually negative. To get an STS-like axis with
+ω > 0 for electron addition, `--align-fermi` subtracts the midgap of the ground-state reference,
+μ = (max removal ω + min addition ω)/2, from every peak; `--shift-removal`/`--shift-addition`
+move one branch only, which is the usual way to anchor the computed first PIR/NIR to the measured
+ones since CASCI gaps between charge sectors are not reliable. The shifts add up
+(ω → ω − μ + shift + shift_side) and are recorded in the header of `spectral_function.dat`.
+With `--common-reference` all spectra share the lowest reference energy as zero, and the console
 prints E_ref − E_0 for each reference either way.
 
 ### `plot`

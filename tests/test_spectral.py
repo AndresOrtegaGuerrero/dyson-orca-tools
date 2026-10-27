@@ -9,6 +9,9 @@ from dyson_orca_tools.spectral import (
     omega_grid,
     peak_energy,
     spectral_function,
+    DysonPeak,
+    midgap,
+    shift_peaks,
 )
 from conftest import fake_state
 
@@ -119,3 +122,41 @@ def test_omega_is_relative_to_each_initial(readme_v3):
     anion0 = {p.initial: p.omega for p in peaks if p.side == "+" and p.label == "+,0"}
     # T1 sits 0.1 Eh above S0 in the fixture, so its addition peak is 0.1 Eh lower
     assert anion0["m1"] - anion0["T1"] == pytest.approx(0.1 * HARTREE_EV)
+
+
+def _peak(side, omega, initial="g"):
+    return DysonPeak(
+        label="",
+        initial=initial,
+        side=side,
+        mult=2,
+        omega=omega,
+        strength=1.0,
+        coeff_ao=np.zeros(1),
+        coeff_mo=np.zeros(1),
+        mo_labels=["HOMO"],
+        ci_norm=1.0,
+        leading_det="",
+        casci=True,
+    )
+
+
+def test_midgap_uses_gap_edges():
+    peaks = [_peak("-", -9.0), _peak("-", -7.0), _peak("+", -1.0), _peak("+", 2.0)]
+    assert midgap(peaks, "g") == pytest.approx(-4.0)  # (−7 + −1)/2
+
+
+def test_midgap_ignores_other_references():
+    peaks = [_peak("-", -7.0), _peak("+", -1.0), _peak("-", -3.0, initial="x")]
+    assert midgap(peaks, "g") == pytest.approx(-4.0)
+
+
+def test_midgap_needs_both_sides():
+    with pytest.raises(ValueError):
+        midgap([_peak("-", -7.0)], "g")
+
+
+def test_shift_peaks_per_side():
+    peaks = [_peak("-", -7.0), _peak("+", -1.0)]
+    shift_peaks(peaks, mu=-4.0, shift=0.1, shift_removal=0.5, shift_addition=-0.5)
+    assert [p.omega for p in peaks] == pytest.approx([-2.4, 2.6])

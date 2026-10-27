@@ -1,5 +1,8 @@
 import copy
+import csv
 import json
+
+import pytest
 from typer.testing import CliRunner
 
 from dyson_orca_tools.cli.main import app
@@ -95,3 +98,60 @@ def test_spectrum_folders_per_reference_and_mult(tmp_path, readme_v3):
     ).exists()  # one folder per ion multiplicity
     assert (out / "T1" / "m4" / "dyson_peaks.csv").exists()
     assert "initial" in (out / "dyson_peaks.csv").read_text().splitlines()[0]
+
+
+def _peaks_by_side(path):
+    rows = list(csv.DictReader(open(path)))
+    return {s: [float(r["omega_eV"]) for r in rows if r["side"] == s] for s in "-+"}
+
+
+def _spectrum_args(tmp_path):
+    return [
+        "spectrum",
+        "-i",
+        str(tmp_path / "ref.json"),
+        "-p",
+        str(tmp_path / "params.json"),
+    ]
+
+
+def test_spectrum_align_fermi_puts_addition_above_zero(tmp_path, readme_v2):
+    _write_inputs(tmp_path, readme_v2)
+    args = _spectrum_args(tmp_path)
+    plain = CliRunner().invoke(app, args + ["-o", str(tmp_path / "plain")])
+    fermi = CliRunner().invoke(
+        app, args + ["-o", str(tmp_path / "fermi"), "--align-fermi"]
+    )
+    assert plain.exit_code == 0, plain.output
+    assert fermi.exit_code == 0, fermi.output
+
+    p = _peaks_by_side(tmp_path / "plain" / "dyson_peaks.csv")
+    f = _peaks_by_side(tmp_path / "fermi" / "dyson_peaks.csv")
+    assert all(w < 0 for w in f["-"]) and all(w > 0 for w in f["+"])
+    mu = p["+"][0] - f["+"][0]  # rigid: every peak moved by the same mu
+    assert p["-"][0] - f["-"][0] == pytest.approx(mu)
+    assert "mu =" in (tmp_path / "fermi" / "spectral_function.dat").read_text()
+
+
+def test_spectrum_shift_per_side(tmp_path, readme_v2):
+    _write_inputs(tmp_path, readme_v2)
+    args = _spectrum_args(tmp_path)
+    plain = CliRunner().invoke(app, args + ["-o", str(tmp_path / "plain")])
+    moved = CliRunner().invoke(
+        app,
+        args
+        + [
+            "-o",
+            str(tmp_path / "moved"),
+            "--shift-removal",
+            "0.5",
+            "--shift-addition",
+            "-0.5",
+        ],
+    )
+    assert plain.exit_code == 0, plain.output
+    assert moved.exit_code == 0, moved.output
+    p = _peaks_by_side(tmp_path / "plain" / "dyson_peaks.csv")
+    m = _peaks_by_side(tmp_path / "moved" / "dyson_peaks.csv")
+    assert m["-"] == pytest.approx([w + 0.5 for w in p["-"]])
+    assert m["+"] == pytest.approx([w - 0.5 for w in p["+"]])

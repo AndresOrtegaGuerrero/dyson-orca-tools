@@ -121,3 +121,25 @@ def omega_grid(
     lo = min(p.omega for p in peaks) - pad
     hi = max(p.omega for p in peaks) + pad
     return np.linspace(lo, hi, npts)
+
+
+def midgap(peaks: list[DysonPeak], initial: str) -> float:
+    """eV midgap between the highest removal and lowest addition peak for a given reference state."""
+    removal = [p.omega for p in peaks if p.initial == initial and p.side == "-"]
+    addition = [p.omega for p in peaks if p.initial == initial and p.side == "+"]
+    if not removal or not addition:
+        raise ValueError(f"midgap: no removal or addition peaks for '{initial}'")
+    return 0.5 * (max(removal) + min(addition))
+
+
+def shift_peaks(
+    peaks: list[DysonPeak],
+    mu: float = 0.0,
+    shift: float = 0.0,
+    shift_removal: float = 0.0,
+    shift_addition: float = 0.0,
+) -> None:
+    """ω → ω − mu + shift + (shift_removal | shift_addition by side)."""
+    per_side = {"-": shift_removal, "+": shift_addition}
+    for p in peaks:
+        p.omega = p.omega - mu + shift + per_side[p.side]
