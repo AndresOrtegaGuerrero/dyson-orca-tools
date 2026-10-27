@@ -52,7 +52,7 @@ Issues = "https://github.com/AndresOrtegaGuerrero/dyson-orca-tools/issues"
 dyson_orca_tools = 'dyson_orca_tools.cli.main:app'
 
 [tool.bumpver]
-current_version = "v0.1.0"
+current_version = "v0.1.1"
 version_pattern = "vMAJOR.MINOR.PATCH[PYTAGNUM]"
 commit_message = "Bump version {old_version} -> {new_version}."
 tag_message = "Release {new_version}."
