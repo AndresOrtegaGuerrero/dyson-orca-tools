@@ -18,7 +18,7 @@ from ..io.orca_output import (
 )
 from ..mixing import mixing_matrix, overlap_matrix, composition
 from ..excited import nto_info, ndo_info, write_orbital_cubes
-from ..spectral import build_peaks, spectral_function, omega_grid
+from ..spectral import build_peaks, spectral_function, omega_grid, relabel, HARTREE_EV
 
 from ..tdm import TransitionDensity
 from ..dipole import (
@@ -209,6 +209,17 @@ def compute_spectrum(
     label_energy: bool = typer.Option(
         False, "--label-energy", help="Append ω − E_0 (eV) to each peak label."
     ),
+    common_reference: bool = typer.Option(
+        False,
+        "--common-reference",
+        help="Measure every spectrum from the lowest reference energy "
+        "instead of from its own reference state.",
+    ),
+    min_strength: float = typer.Option(
+        1e-8,
+        "--min-strength",
+        help="Drop peaks below this strength (e.g. spin-forbidden) before labelling.",
+    ),
 ):
     """Multireference spectral function ρ(ω) = η Σ_j |ϱ_j|² / ((ω − E_j)² + η²)."""
     grid = _cube_grid(cube_points, cube_spacing, cube_margin) if cube else None
@@ -219,20 +230,109 @@ def compute_spectrum(
         params = load_parameters(parameters)
     except (ValueError, FileNotFoundError) as exc:
         _fail(f"Parameters: {exc}")
-    for i, run in enumerate(params.runs):
+    for run in params.runs:
         sannity_check(initial_wfn_data, run.data)
     _ok(
-        f"Loaded {len(params.runs)} final run(s), {sum(len(r.roots) for r in params.runs)} root(s)."
+        f"Loaded {len(params.initials)} reference state(s), {len(params.runs)} final run(s), "
+        f"{sum(len(r.roots) for r in params.runs)} root(s)."
     )
 
     typer.secho("🔄 Computing Dyson orbitals...", fg=typer.colors.BLUE)
     try:
-        peaks = build_peaks(initial_wfn_data, params)
+        peaks = build_peaks(initial_wfn_data, params, min_strength=min_strength)
     except ValueError as exc:
         _fail(str(exc))
-    for p in peaks:
-        p.omega += shift
+    n_all = sum(len(r.roots) for r in params.runs) * len(params.initials)
+    if len(peaks) < n_all:
+        typer.echo(
+            f"   dropped {n_all - len(peaks)} peak(s) with strength < {min_strength}"
+        )
 
+    # energy_zero: each reference state has its own zero, unless --common-reference
+    e0 = min(s.energy for s in params.initials)
+    de_ref = {s.label: (s.energy - e0) * HARTREE_EV for s in params.initials}
+    for p in peaks:
+        p.omega += shift + (de_ref[p.initial] if common_reference else 0.0)
+
+    labels = [s.label for s in params.initials]
+    opts = dict(
+        eta=eta,
+        omega_min=omega_min,
+        omega_max=omega_max,
+        npts=npts,
+        shift=shift,
+        plot=plot,
+        vertical=vertical,
+        legend_outside=legend_outside,
+        label_threshold=label_threshold,
+        label_energy=label_energy,
+    )
+
+    # One spectrum per (reference, ion multiplicity): peaks of different ion
+    # multiplicities are never summed (their relative weights need the spin
+    # factors, not implemented). Folders: <ref>/ or <ref>/m<mult>/ when several.
+    leaves = 0
+    for lab in labels:
+        mine = [p for p in peaks if p.initial == lab]
+        if not mine:
+            typer.secho(f"\nreference {lab}: no peaks left", fg=typer.colors.YELLOW)
+            continue
+        ref_dir = output_dir if len(labels) == 1 else output_dir / lab
+        mults = sorted({p.mult for p in mine})
+        for m in mults:
+            out = ref_dir if len(mults) == 1 else ref_dir / f"m{m}"
+            out.mkdir(parents=True, exist_ok=True)
+            typer.secho(
+                f"\nreference {lab}, ion multiplicity {m}: E_ref − E_0 = {de_ref[lab]:.3f} eV"
+                + (" (common zero)" if common_reference else ""),
+                fg=typer.colors.BLUE,
+            )
+            subset = relabel(
+                [p for p in mine if p.mult == m]
+            )  # in place: table below matches
+            _write_spectrum(subset, out, initial_wfn_data, grid=grid, **opts)
+            leaves += 1
+
+    if leaves > 1:  # one table over everything; labels as in the leaf folders
+        _write_peaks_csv(output_dir / "dyson_peaks.csv", peaks, with_initial=True)
+        _ok(f"all references: {output_dir / 'dyson_peaks.csv'}")
+
+
+def _write_peaks_csv(path: Path, peaks, with_initial: bool = False):
+    with open(path, "w", newline="") as f:
+        w = csv.writer(f)
+        head = ["label", "side", "mult", "omega_eV", "strength", "branch"]
+        w.writerow((["initial"] if with_initial else []) + head)
+        for p in peaks:
+            row = [
+                p.label,
+                p.side,
+                p.mult,
+                f"{p.omega:.6f}",
+                f"{p.strength:.6f}",
+                "CASCI" if p.casci else "CASSCF",
+            ]
+            w.writerow(([p.initial] if with_initial else []) + row)
+
+
+def _write_spectrum(
+    peaks,
+    out_dir: Path,
+    initial_wfn_data: dict,
+    *,
+    eta,
+    omega_min,
+    omega_max,
+    npts,
+    shift,
+    grid,
+    plot,
+    vertical,
+    legend_outside,
+    label_threshold,
+    label_energy,
+):
+    """Table, CSVs, ρ(ω), AO coefficients, cubes and plot for one reference state."""
     typer.echo(
         f"   {'label':>6} {'mult':>4} {'omega/eV':>10} {'strength':>9} {'Σc²':>6}  branch  composition (d_p²/strength)"
     )
@@ -242,23 +342,9 @@ def compute_spectrum(
             f"   {p.label:>6} {p.mult:>4} {p.omega:>10.3f} {p.strength:>9.4f} {p.ci_norm:>6.3f}  "
             f"{'CASCI' if p.casci else 'CASSCF':6s}  {comp}"
         )
+    _write_peaks_csv(out_dir / "dyson_peaks.csv", peaks)
 
-    with open(output_dir / "dyson_peaks.csv", "w", newline="") as f:
-        w = csv.writer(f)
-        w.writerow(["label", "side", "mult", "omega_eV", "strength", "branch"])
-        for p in peaks:
-            w.writerow(
-                [
-                    p.label,
-                    p.side,
-                    p.mult,
-                    f"{p.omega:.6f}",
-                    f"{p.strength:.6f}",
-                    "CASCI" if p.casci else "CASSCF",
-                ]
-            )
-
-    with open(output_dir / "dyson_composition.csv", "w", newline="") as f:
+    with open(out_dir / "dyson_composition.csv", "w", newline="") as f:
         w = csv.writer(f)
         w.writerow(["label", "strength", "ci_norm", "leading_det", *peaks[0].mo_labels])
         for p in peaks:  # d_p² per initial active MO; the row sums to the strength
@@ -278,23 +364,23 @@ def compute_spectrum(
     omega = np.linspace(lo, hi, npts)
     rho = spectral_function(peaks, omega, eta=eta)
     np.savetxt(
-        output_dir / "spectral_function.dat",
+        out_dir / "spectral_function.dat",
         np.column_stack([omega, rho]),
         header=f"omega_eV  rho   (eta = {eta} eV, shift = {shift} eV)",
     )
 
     coeffs = np.column_stack([p.coeff_ao for p in peaks])
     np.savetxt(
-        output_dir / "dyson_orbitals_ao.txt",
+        out_dir / "dyson_orbitals_ao.txt",
         coeffs,
         header="columns = peaks "
         + " ".join(p.label for p in peaks)
         + " ; rows = AOs (ORCA order)",
     )
 
-    if cube:
+    if grid is not None:
         for p in peaks:
-            name = output_dir / f"dyson_{p.side}{p.label.split(',')[1]}_m{p.mult}.cube"
+            name = out_dir / f"dyson_{p.side}{p.label.split(',')[1]}_m{p.mult}.cube"
             if not _write_cube_or_warn(initial_wfn_data, p.coeff_ao, name, grid):
                 break
         else:
@@ -302,15 +388,25 @@ def compute_spectrum(
 
     if plot:
         _plot_or_warn(
-            output_dir,
+            out_dir,
             vertical=vertical,
             legend_outside=legend_outside,
             label_threshold=label_threshold,
             label_energy=label_energy,
         )
     _ok(
-        f"Written to {output_dir}: dyson_peaks.csv, dyson_composition.csv, spectral_function.dat, dyson_orbitals_ao.txt"
+        f"Written to {out_dir}: dyson_peaks.csv, dyson_composition.csv, "
+        "spectral_function.dat, dyson_orbitals_ao.txt"
     )
+
+
+def _parse_state_spec(spec: str) -> tuple[int, int]:
+    """'3:0' -> (3, 0)."""
+    try:
+        mult, root = spec.split(":")
+        return int(mult), int(root)
+    except ValueError:
+        raise ValueError(f"--initial-state '{spec}': expected MULT:ROOT, e.g. 1:0")
 
 
 @app.command("prepare")
@@ -331,11 +427,17 @@ def prepare_parameters(
     output: Path = typer.Option(
         "params.json", "-o", "--output", help="Parameters file to write."
     ),
-    initial_root: int = typer.Option(
-        0, "--initial-root", help="Root of the initial output to use as reference."
+    initial_state: List[str] = typer.Option(
+        None,
+        "--initial-state",
+        help="Reference state as MULT:ROOT, repeatable (e.g. 1:0 3:0). "
+        "Default: the lowest-energy root of the output.",
+    ),
+    all_initial_roots: bool = typer.Option(
+        False, "--all-initial-roots", help="Every root of every block as a reference."
     ),
 ):
-    """Build the v2 parameters file from ORCA outputs (CI vectors, energies, active space)."""
+    """Build the parameters file (v3) from ORCA outputs (CI vectors, energies, active space)."""
     pairs = []
     for item in final:
         out_file, _, json_file = item.partition(":")
@@ -344,7 +446,13 @@ def prepare_parameters(
             (out_file, Path(json_file) if json_file else out_file.with_suffix(".json"))
         )
     try:
-        raw = build_parameters(initial_out, pairs, initial_root)
+        cas = parse_orca_output(initial_out)
+        if all_initial_roots:
+            states = [(r.mult, r.index) for r in cas.roots]
+        else:
+            states = [_parse_state_spec(s) for s in initial_state or []]
+
+        raw = build_parameters(cas, pairs, states)
         params = parse_parameters(raw)  # validates before writing
     except (ValueError, FileNotFoundError) as exc:
         _fail(str(exc))
@@ -355,10 +463,11 @@ def prepare_parameters(
         )
     with open(output, "w") as f:
         json.dump(raw, f, indent=2)
-    ini = params.initial
-    _ok(
-        f"initial: CAS({ini.nelc},{ini.norb}) mult {ini.mult}, E = {ini.energy} Eh, {len(ini.spin_ci)} determinants"
-    )
+    for ini in params.initials:
+        _ok(
+            f"initial {ini.label}: CAS({ini.nelc},{ini.norb}) mult {ini.mult}, "
+            f"E = {ini.energy} Eh, {len(ini.spin_ci)} determinants"
+        )
     for run in params.runs:
         norm = [sum(c * c for c in r.spin_ci.values()) for r in run.roots]
         typer.echo(

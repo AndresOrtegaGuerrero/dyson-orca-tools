@@ -1,3 +1,4 @@
+import copy
 import numpy as np
 import pytest
 
@@ -46,6 +47,8 @@ README_ANION = {
     "[22u0]": 0.993890846,
 }
 
+TRIPLET = {"[2uu0]": 0.9, "[u2u0]": -0.1}
+
 
 @pytest.fixture
 def readme_v2() -> dict:
@@ -77,3 +80,18 @@ def readme_v2() -> dict:
             ],
         }
     }
+
+
+@pytest.fixture
+def readme_v3(readme_v2) -> dict:
+    raw = copy.deepcopy(readme_v2)
+    singlet = raw["parameters"]["initial"]
+    triplet = {
+        **singlet,
+        "mult": 3,
+        "energy": -230.4,
+        "spin_ci": TRIPLET,
+        "label": "T1",
+    }
+    raw["parameters"]["initial"] = [singlet, triplet]
+    return raw

@@ -62,7 +62,11 @@ class OrcaCasOutput:
 def parse_orca_output(path: Path) -> OrcaCasOutput:
     out = OrcaCasOutput(Path(path))
     energies: dict[tuple[int, int], float] = {}  # (mult, root) -> E, from any ROOT line
-    in_det_block, mult, root = False, None, None
+    # A root is created only when its first determinant line arrives ("pending"
+    # until then): ORCA 6 prints the determinant section once per MULT block,
+    # right after that block's CSF listing, so the ROOT lines of the next CSF
+    # block would otherwise be taken for empty determinant roots.
+    in_det_block, mult, root, pending = False, None, None, None
 
     with open(path) as f:
         for raw in f:
@@ -79,19 +83,22 @@ def parse_orca_output(path: Path) -> OrcaCasOutput:
                 idx = int(m.group(1))
                 if m.group(2) is not None and mult is not None:
                     energies[(mult, idx)] = float(m.group(2))
+                root = None
                 if in_det_block and mult is not None:
-                    root = OrcaRoot(idx, mult, energies.get((mult, idx)))
-                    out.roots.append(root)
+                    pending = OrcaRoot(idx, mult, energies.get((mult, idx)))
                 continue
 
             if "Spin-Determinant CI Printing" in line:
-                in_det_block, root = True, None
+                in_det_block, root, pending = True, None, None
                 continue
             if in_det_block and ("DENSITY MATRIX" in line or "TRANSITION" in line):
-                in_det_block, root = False, None
+                in_det_block, root, pending = False, None, None
                 continue
 
-            if in_det_block and root is not None and (m := _RE_DET.match(line)):
+            if in_det_block and pending is not None and (m := _RE_DET.match(line)):
+                if root is not pending:  # first determinant of this root
+                    root = pending
+                    out.roots.append(root)
                 root.spin_ci[f"[{m.group(1)}]"] = float(m.group(2))
 
     for r in out.roots:  # energy may have been printed only in the CSF block, earlier
@@ -117,14 +124,22 @@ def _state_dict(cas: OrcaCasOutput, root: OrcaRoot) -> dict:
     }
 
 
-def initial_from_output(
-    cas: OrcaCasOutput, root: int = 0, mult: int | None = None
-) -> dict:
-    mult = mult or cas.mult
+def initial_from_output(cas: OrcaCasOutput, mult: int, root: int = 0) -> dict:
     roots = cas.roots_of_mult(mult)
     if root >= len(roots):
-        raise ValueError(f"{cas.path}: root {root} not found for mult {mult}")
-    return _state_dict(cas, roots[root])
+        raise ValueError(
+            f"{cas.path}: root {root} not found for mult {mult} (has {len(roots)})"
+        )
+    d = _state_dict(cas, roots[root])
+    d["root"] = root
+    d["label"] = f"m{mult}r{root}"
+    return d
+
+
+def ground_state(cas: OrcaCasOutput) -> tuple[int, int]:
+    """(mult, root) of the lowest-energy root over all blocks."""
+    best = min(cas.roots, key=lambda r: r.energy)
+    return best.mult, best.index
 
 
 def runs_from_output(cas: OrcaCasOutput, json_file: str | Path) -> list[dict]:
@@ -144,16 +159,22 @@ def runs_from_output(cas: OrcaCasOutput, json_file: str | Path) -> list[dict]:
 
 
 def build_parameters(
-    initial_out: Path, finals: list[tuple[Path, Path]], initial_root: int = 0
+    cas_initial: OrcaCasOutput,
+    finals: list[tuple[Path, Path]],
+    initial_states: list[tuple[int, int]] | None = None,
 ) -> dict:
     """finals: (orca .out, orca_2json .json) pairs for the N±1 calculations."""
-    cas_initial = parse_orca_output(initial_out)
+
+    if not initial_states:
+        initial_states = [ground_state(cas_initial)]
     runs = []
     for out_file, json_file in finals:
         runs.extend(runs_from_output(parse_orca_output(out_file), json_file))
     return {
         "parameters": {
-            "initial": initial_from_output(cas_initial, initial_root),
+            "initial": [
+                initial_from_output(cas_initial, m, r) for m, r in initial_states
+            ],
             "final": runs,
         }
     }

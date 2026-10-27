@@ -18,9 +18,10 @@ HARTREE_EV = 27.211386245988
 @dataclass
 class DysonPeak:
     label: str  # "-,0", "+,1" ... numbered by energy within each side
+    initial: str  # label of the reference state this peak belongs to
     side: str  # "-" removal (N-1), "+" addition (N+1)
     mult: int
-    omega: float  # eV, relative to the neutral ground state
+    omega: float  # eV, relative to the reference state of this peak
     strength: float
     coeff_ao: np.ndarray
     coeff_mo: np.ndarray  # d_p over the initial active MOs; Σ d_p² = strength
@@ -44,51 +45,63 @@ def peak_energy(e_initial: float, e_final: float, removal: bool) -> float:
     return -de if removal else de
 
 
-def _relabel(peaks: list[DysonPeak]) -> list[DysonPeak]:
-    """Number peaks 0, 1, ... by increasing energy of the N±1 state within each side:
-    removal ω = E_N − E_{N−1} (descending ω), addition ω = E_{N+1} − E_N (ascending ω)."""
-    for side, sign in (("-", -1), ("+", 1)):
-        same_side = sorted(
-            (p for p in peaks if p.side == side), key=lambda p: sign * p.omega
+def relabel(peaks: list[DysonPeak]) -> list[DysonPeak]:
+    """Number peaks 0, 1, ... by increasing energy of the N±1 state within each side
+    and reference state: removal ω = E_N − E_{N−1} (descending ω), addition
+    ω = E_{N+1} − E_N (ascending ω). Output keeps the reference order of the file."""
+    for ini, side in {(p.initial, p.side) for p in peaks}:
+        sign = -1 if side == "-" else 1
+        same = sorted(
+            (p for p in peaks if (p.initial, p.side) == (ini, side)),
+            key=lambda p: sign * p.omega,
         )
-        for j, p in enumerate(same_side):
+        for j, p in enumerate(same):
             p.label = f"{side},{j}"
-    return sorted(peaks, key=lambda p: p.omega)
+
+    order = {lab: k for k, lab in enumerate(dict.fromkeys(p.initial for p in peaks))}
+    return sorted(peaks, key=lambda p: (order[p.initial], p.omega))
 
 
-def build_peaks(initial_data: dict, params: Parameters) -> list[DysonPeak]:
+def build_peaks(
+    initial_data: dict, params: Parameters, min_strength: float = 0.0
+) -> list[DysonPeak]:
     """One Dyson orbital per charged root; requires energies on every state."""
-    if params.initial.energy is None:
-        raise ValueError("initial: 'energy' is required for the spectral function")
 
     peaks = []
-    for i, run in enumerate(params.runs):
-        if run.data is None:
-            raise ValueError(f"final[{i}]: ORCA JSON not loaded")
-        removal = params.is_removal(run)
-        for j, root in enumerate(run.roots):
-            if root.energy is None:
-                raise ValueError(f"final[{i}].roots[{j}]: 'energy' is required")
-            dyson = Dyson(initial_data, run.data, params.pair(run, root))
-            coeff_mo = dyson.dyson_mo_coefficients()
-            coeff_ao = dyson.dyson_orbital(coeff_mo)
-            leading = max(root.spin_ci, key=lambda k: abs(root.spin_ci[k]))
-            peaks.append(
-                DysonPeak(
-                    label="",
-                    side="-" if removal else "+",
-                    mult=run.mult,
-                    omega=peak_energy(params.initial.energy, root.energy, removal),
-                    strength=dyson.strength(coeff_ao),
-                    coeff_ao=coeff_ao,
-                    coeff_mo=coeff_mo,
-                    mo_labels=dyson.active_labels(),
-                    ci_norm=sum(c * c for c in root.spin_ci.values()),
-                    leading_det=leading,
-                    casci=dyson.calculation_is_casci(),
+
+    for ini in params.initials:
+        if ini.energy is None:
+            raise ValueError(f"initial '{ini.label}': 'energy' is required")
+
+        for i, run in enumerate(params.runs):
+            if run.data is None:
+                raise ValueError(f"final[{i}]: ORCA JSON not loaded")
+            removal = params.is_removal(run)
+            for j, root in enumerate(run.roots):
+                if root.energy is None:
+                    raise ValueError(f"final[{i}].roots[{j}]: 'energy' is required")
+                dyson = Dyson(initial_data, run.data, params.pair(run, root, ini))
+                coeff_mo = dyson.dyson_mo_coefficients()
+                coeff_ao = dyson.dyson_orbital(coeff_mo)
+                leading = max(root.spin_ci, key=lambda k: abs(root.spin_ci[k]))
+                peaks.append(
+                    DysonPeak(
+                        label="",
+                        initial=ini.label,
+                        side="-" if removal else "+",
+                        mult=run.mult,
+                        omega=peak_energy(ini.energy, root.energy, removal),
+                        strength=dyson.strength(coeff_ao),
+                        coeff_ao=coeff_ao,
+                        coeff_mo=coeff_mo,
+                        mo_labels=dyson.active_labels(),
+                        ci_norm=sum(c * c for c in root.spin_ci.values()),
+                        leading_det=leading,
+                        casci=dyson.calculation_is_casci(),
+                    )
                 )
-            )
-    return _relabel(peaks)
+    peaks = [p for p in peaks if p.strength >= min_strength]
+    return relabel(peaks)
 
 
 def spectral_function(

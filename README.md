@@ -10,32 +10,45 @@ pip install "dyson-orca-tools[plot]"    # + matplotlib figures
 pip install "dyson-orca-tools[cube]"    # + PySCF cube files
 ```
 
-For development, clone the repository and install it editable with the test tools:
-
-```shell
-git clone https://github.com/AndresOrtegaGuerrero/dyson-orca-tools.git
-cd dyson-orca-tools
-pip install -e ".[dev,plot]"
-pre-commit install
-```
+Development setup and releasing: see [CONTRIBUTING.md](CONTRIBUTING.md).
 
 ## Usage
 
-Three commands, in the order of a typical workflow:
+### What you need from ORCA
+
+One CASCI/CASSCF calculation for the reference (N electrons) and one for each charged species
+(N−1 and/or N+1), each with `PrintWF det` and a small `TPrintWF` in `%casscf`, plus the
+`orca_2json` file of every calculation (see [ORCA instructions](#-orca-instructions)):
+
+```
+%casscf nel 6  norb 6
+        mult   1,3          # several multiplicities in one run are fine (one block each)
+        nroots 2,2
+        printwf det
+        ci TPrintWF 1e-6 end
+end
+```
+
+A calculation with several multiplicities gives one block per multiplicity in the output;
+ORCA prints them from the highest multiplicity down, whatever the order in the input, and
+numbers the roots from 0 inside each block. `prepare` reads every block, so one file is enough
+per species.
+
+### Workflow
 
 ```shell
-# 1. build the parameters file from the ORCA outputs (CI vectors, root energies, active space)
-dyson_orca_tools prepare -i neutral/out.out \
+# 1. parameters file: CI vectors, root energies and active space of every state
+dyson_orca_tools prepare -i ref/out.out \
     -f cation/out.out:cation/mol.json \
     -f anion/out.out:anion/mol.json \
     -o results/params.json
 
-# 2. Dyson orbitals + multireference spectral function
-dyson_orca_tools spectrum -i neutral/mol.json -p results/params.json -o results \
-    --eta 0.05 [--shift E_F] [--cube] [--plot [--vertical]]
+# 2. Dyson orbitals + spectral function, written under results/
+dyson_orca_tools spectrum -i ref/mol.json -p results/params.json -o results \
+    --eta 0.05 --plot --cube
 
 # 3. re-plot later without recomputing
-dyson_orca_tools plot -o results --title "pentacene CASCI(12,12)" [--vertical]
+dyson_orca_tools plot -o results --title "CH2 CASCI(6,6)" --vertical
 ```
 
 `spectrum` implements the spectral function of Kumar et al., *JACS* 2025, 147, 24993 (eq. 10):
@@ -44,33 +57,98 @@ dyson_orca_tools plot -o results --title "pentacene CASCI(12,12)" [--vertical]
 
 one peak per charged root j, with its Dyson orbital ϱ±,j and strength ⟨ϱ|ϱ⟩.
 
-A single pair (one initial, one final state) is still available as
-`dyson_orca_tools dyson -i initial.json -f final.json -p params.json`.
+### `prepare` — choosing the states
 
-### `prepare`
+| option | meaning |
+|---|---|
+| `-i FILE` | ORCA output of the reference calculation |
+| `-f OUT[:JSON]` | ORCA output of one charged calculation (repeatable); its `orca_2json` file is `<name>.json` next to it unless given after the colon |
+| `--initial-state MULT:ROOT` | reference state (repeatable). Default: the lowest-energy root over all blocks |
+| `--all-initial-roots` | every root of every block of the reference as a reference state |
+| `-o FILE` | parameters file to write (JSON paths are stored relative to it) |
 
-Reads the ORCA output of the initial state (`-i`) and of each N±1 calculation (`-f`, repeatable)
-and writes the parameters file. Each `-f` names the ORCA output; its `orca_2json` file is taken as
-`<name>.json` next to it, or given explicitly after a colon: `-f run/out.out:run/mol.json`.
-Every `MULT=` block of an output becomes one run, so one output with `mult 2,4` yields two runs.
-JSON paths are stored relative to the written parameters file.
+Every `MULT=` block of a charged output becomes one run with all its roots. Some combinations:
 
-The ORCA inputs need `PrintWF det` and a small `TPrintWF` (e.g. `1e-6`) in `%casscf`;
-`prepare` prints Σc² per root so you can see how much the printout truncated.
+```shell
+# ground state only, charged species with one multiplicity each
+dyson_orca_tools prepare -i ref/out.out -f cation/out.out:cation/mol.json -f anion/out.out:anion/mol.json -o results/params.json
 
-### `spectrum` outputs
+# singlet/triplet reference (mult 1,3): S0 and T0 as references, ions with doublets and quartets (mult 2,4)
+dyson_orca_tools prepare -i ref/out.out -f cation/out.out:cation/mol.json -f anion/out.out:anion/mol.json \
+    --initial-state 1:0 --initial-state 3:0 -o results/params.json
+
+# an excited reference as well: S0, S1 and T0
+dyson_orca_tools prepare -i ref/out.out -f ... --initial-state 1:0 --initial-state 1:1 --initial-state 3:0 -o results/params.json
+
+# only the cation side
+dyson_orca_tools prepare -i ref/out.out -f cation/out.out:cation/mol.json -o results/params.json
+```
+
+`prepare` prints the chosen references and, per run, Σc² of every root so you can see how much
+the determinant printout truncated. A reference may be of any charge and multiplicity; the
+charged runs must differ from it by one electron and change the multiplicity parity.
+
+### `spectrum` — options
+
+| option | default | meaning |
+|---|---|---|
+| `-i FILE` | | `orca_2json` file of the reference calculation (its orbitals carry the Dyson orbitals) |
+| `-p FILE` | | parameters file from `prepare` |
+| `-o DIR` | `.` | output folder (layout below) |
+| `--eta` | `0.05` | Lorentzian broadening (eV) |
+| `--shift` | `0` | rigid shift of all peak energies (eV), e.g. to align E_F |
+| `--common-reference` | off | measure every spectrum from the lowest reference energy instead of from its own reference state |
+| `--min-strength` | `1e-8` | drop peaks below this strength (spin-forbidden ones) before labelling |
+| `--omega-min/--omega-max/--npts` | peaks ± 1 eV, 2000 | grid of ρ(ω) |
+| `--cube` | off | one cube per peak (needs `[cube]`); grid options below |
+| `--plot`, `--vertical`, `--legend-outside`, `--label-threshold S`, `--label-energy` | off | figure (needs `[plot]`): energy on the y axis, legend outside, label only peaks with strength ≥ S, append ω − E_0 to the labels |
+
+### `spectrum` — output layout
+
+One spectrum is written **per reference state and per ion multiplicity**. Peaks of different ion
+multiplicities are never summed: their relative weights would need the spin-coupling factors,
+which are not applied, whereas each spectrum on its own is exact up to one overall scale.
+
+```
+results/                       one reference, one ion multiplicity: files directly here
+results/m1r0/                  reference "m1r0" (mult 1, root 0), only doublet ions reachable -> files directly here
+results/m3r0/m2/               reference "m3r0" (mult 3, root 0), doublet ions
+results/m3r0/m4/               reference "m3r0", quartet ions
+results/dyson_peaks.csv        one table over everything (`initial` and `mult` columns), only when there are several folders
+```
+
+The folder of a reference is its label, `m<mult>r<root>`, or whatever `"label"` you set in
+the parameters file. From a singlet reference every quartet root has zero strength
+(spin-forbidden) and is dropped by `--min-strength`, so only `m2` remains and the files are
+written directly in the reference folder; from a triplet reference both appear.
+
+Each leaf folder contains:
 
 | file | content |
 |---|---|
 | `dyson_peaks.csv` | label, side (−/+), multiplicity, ω (eV), strength, branch (CASCI/CASSCF) |
-| `dyson_composition.csv` | per peak: strength, Σc² of the root, leading determinant, and d_p² for every active MO (HOMO−k / LUMO+k of the initial state); the d_p² sum to the strength |
-| `spectral_function.dat` | ω, ρ(ω) on a grid (`--omega-min/max`, `--npts`) |
+| `dyson_composition.csv` | per peak: strength, Σc² of the root, leading determinant, and d_p² for every active MO (HOMO−k / LUMO+k of the reference); the d_p² sum to the strength |
+| `spectral_function.dat` | ω, ρ(ω) on the grid |
 | `dyson_orbitals_ao.txt` | one column of AO coefficients per peak (ORCA AO order) |
-| `dyson_<side><j>_m<mult>.cube` | with `--cube`, needs `pip install "dyson-orca-tools[cube]"` (PySCF); grid via `--cube-points/--cube-spacing/--cube-margin` (see below) |
-| `spectral_function.png/.pdf` | with `--plot`, needs `pip install "dyson-orca-tools[plot]"` (matplotlib) |
+| `dyson_<side><j>_m<mult>.cube` | with `--cube` |
+| `spectral_function.png/.pdf` | with `--plot` |
 
-Peaks are labelled ϱ−,j / ϱ+,j by increasing energy of the N±1 state within each side (j = 0 is the ground state of the ion); energies are relative to the
-initial ground state (removal negative, addition positive); `--shift` adds a rigid offset.
+Peaks are labelled ϱ−,j / ϱ+,j by increasing energy of the N±1 state within each side (j = 0 is
+the ground state of the ion), numbered separately in every folder. Energies are relative to the
+reference state the electron is removed from or added to (removal negative, addition positive);
+with `--common-reference` all spectra share the lowest reference energy as zero, and the console
+prints E_ref − E_0 for each reference either way.
+
+### `plot`
+
+Re-draws `spectral_function.png/.pdf` from a leaf folder: `dyson_orca_tools plot -o results/m3r0/m4
+[--title ...] [--vertical] [--legend-outside] [--label-threshold S] [--label-energy]`.
+
+### `dyson` — a single pair
+
+`dyson_orca_tools dyson -i initial.json -f final.json -p params.json [-o DIR] [--cube]` computes one
+Dyson orbital between one reference and one charged state (the old single-state parameters format
+is accepted).
 
 ### Cube grid
 
@@ -86,7 +164,7 @@ e.g. `--cube-points 60,60,120 --cube-margin 6` or `--cube-spacing 0.2`.
 
 ### Orbitals: CASCI vs CASSCF
 
-The tool detects from the MO overlap whether initial and final states share their orbitals.
+The tool detects from the MO overlap whether reference and charged states share their orbitals.
 With one orbital set (CASCI, `!MORead NoIter` with `ActOrbs/IntOrbs/ExtOrbs unchanged`) the
 Dyson orbital is a pure active-space object. With separately optimized CASSCF orbitals the
 non-orthogonal branch is used, including the relaxation of the inactive orbitals via the
@@ -94,18 +172,21 @@ core-block determinant (Schur complement); `spectrum` prints that determinant pe
 
 ### Parameters file
 
-`initial` is the reference state (any charge/multiplicity); `final` is a list of runs, one per
-ORCA JSON (one orbital set and multiplicity), each with its roots. Energies in Hartree. Runs may
-differ from the initial state by ±1 electron and must change the multiplicity parity;
-spin-forbidden roots (|ΔS| ≠ ½) are accepted and give zero strength.
+`prepare` writes it; you only need its structure to edit labels or hand-pick roots. `initial` is
+a list of reference states (a single dict is accepted too), `final` a list of runs, one per
+ORCA JSON and multiplicity, each with its roots. Energies in Hartree. The multiplicity of every
+state is taken from here, not from the JSON (whose `Multiplicity` is only the input value), and
+every determinant must have 2M_S = mult − 1, as ORCA prints the M_S = S component.
 
 ```json
 {
   "parameters": {
-    "initial": {
-      "nelc": 4, "norb": 4, "mult": 1, "energy": -230.5123,
-      "spin_ci": {"[2200]": 0.957520133, "[2020]": -0.224387606, "[0202]": -0.063982267}
-    },
+    "initial": [
+      {"label": "S0", "root": 0, "nelc": 4, "norb": 4, "mult": 1, "energy": -230.5123,
+       "spin_ci": {"[2200]": 0.957520133, "[2020]": -0.224387606, "[0202]": -0.063982267}},
+      {"label": "T0", "root": 0, "nelc": 4, "norb": 4, "mult": 3, "energy": -230.4800,
+       "spin_ci": {"[2uu0]": 0.98, "[u2u0]": -0.12}}
+    ],
     "final": [
       {"file": "../anion/mol.json", "nelc": 5, "norb": 4, "mult": 2,
        "roots": [
@@ -118,8 +199,6 @@ spin-forbidden roots (|ΔS| ≠ ½) are accepted and give zero strength.
   }
 }
 ```
-
-The `dyson` command still accepts the old single-state format (`final` as one dict with `spin_ci`).
 
 ## 🧪 ORCA Instructions
 To extract the required data from your CASSCF or CASCI calculations in ORCA, you must use the utility program `orca_2json`.
@@ -156,16 +235,6 @@ After that you can obtain json file from the calculations
 orca_2json mol.gbw
 ```
 
-
-## Releasing
-
-Releases are published to PyPI by GitHub Actions when a `v*` tag is pushed. From an up-to-date `main`:
-
-```shell
-bumpver update --patch    # or --minor / --major: bumps pyproject.toml + version.py, commits, tags and pushes
-```
-
-The `release` workflow then checks that the tag matches `dyson_orca_tools.__version__`, builds the sdist and wheel, uploads them to PyPI via trusted publishing, and creates a GitHub release with auto-generated notes.
 
 ## Contact
 
