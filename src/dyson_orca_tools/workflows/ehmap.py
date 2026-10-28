@@ -10,6 +10,7 @@ from ..io.orca_output import (
     parse_pt2_energies,
     parse_qdnevpt2,
 )
+from ..constants import HARTREE_EV
 from ..tdm import TransitionDensity
 from ..excited import nto_info, ndo_info
 from ..mixing import mixing_matrix, overlap_matrix, composition
@@ -165,9 +166,9 @@ def analyse_pair(sys: EhmapSystem, i: int, j: int, rdm: dict) -> PairAnalysis:
             rdm[r] = t_r.gamma() / t_r.parsed_norms[0]
     ndo = ndo_info(rdm[j], rdm[i], sys.c_act)
     m["ndo_kappa"], m["promotion"] = ndo["kappa"][:6].tolist(), ndo["p"]
-    m["dE_casscf_eV"] = (sys.cas_energy[j] - sys.cas_energy[i]) * 27.2114
+    m["dE_casscf_eV"] = (sys.cas_energy[j] - sys.cas_energy[i]) * HARTREE_EV
     if sys.energy_pt2:
-        m["dE_pt2_eV"] = (sys.energy_pt2[j] - sys.energy_pt2[i]) * 27.2114
+        m["dE_pt2_eV"] = (sys.energy_pt2[j] - sys.energy_pt2[i]) * HARTREE_EV
     pa = PairAnalysis(i, j, m, om, g, nto, ndo)
     if sys.dip is not None:
         pa.mu = transition_dipole(d_ao, sys.dip)
