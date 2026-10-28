@@ -1,14 +1,15 @@
 import numpy as np
 import pytest
+from conftest import fake_state
+
 from dyson_orca_tools.ehmap import (
+    active_mo_coefficients,
     ao_to_atom,
     fragment_of_ao,
-    omega_matrix,
-    metrics,
-    active_mo_coefficients,
     load_fragments,
+    metrics,
+    omega_matrix,
 )
-from conftest import fake_state
 
 
 def test_omega_sum_rule():

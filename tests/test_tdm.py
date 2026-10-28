@@ -1,10 +1,11 @@
 import os
+
 import numpy as np
 import pytest
-
-from dyson_orca_tools.tdm import TransitionDensity, occ_array, _flip
-from dyson_orca_tools.io.orca_output import parse_orca_output, parse_nto_occupations
 from conftest import README_INITIAL
+
+from dyson_orca_tools.io.orca_output import parse_nto_occupations, parse_orca_output
+from dyson_orca_tools.tdm import TransitionDensity, _flip, occ_array
 
 R2 = 1 / np.sqrt(2)
 SINGLET = {"[ud]": R2, "[du]": -R2}

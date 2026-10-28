@@ -1,6 +1,7 @@
-from conftest import load_params
-from dyson_orca_tools.workflows.spectrum import run_spectrum, SpectrumOptions
 import pytest
+from conftest import load_params
+
+from dyson_orca_tools.workflows.spectrum import SpectrumOptions, run_spectrum
 
 
 def test_run_spectrum_leaves_and_layout(readme_v3):

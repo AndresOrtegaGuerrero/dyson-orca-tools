@@ -12,10 +12,10 @@ dropped). Expected block::
     ROOT   1:  E=    ...
 """
 
-from dataclasses import dataclass, field
-from pathlib import Path
 import itertools
 import re
+from dataclasses import dataclass, field
+from pathlib import Path
 
 import numpy as np
 

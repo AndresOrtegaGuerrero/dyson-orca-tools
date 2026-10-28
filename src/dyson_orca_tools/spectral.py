@@ -7,13 +7,14 @@ relative to the neutral ground state.
 """
 
 from dataclasses import dataclass
+
 import numpy as np
 
-from .dyson import Dyson
-from .io.params import Parameters
 from .constants import (
     HARTREE_EV,
 )  # re-exported: workflows and tests import it from here
+from .dyson import Dyson
+from .io.params import Parameters
 
 
 @dataclass

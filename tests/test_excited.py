@@ -3,7 +3,7 @@ import os
 import numpy as np
 import pytest
 
-from dyson_orca_tools.excited import nto_info, ndo_info
+from dyson_orca_tools.excited import ndo_info, nto_info
 from dyson_orca_tools.tdm import TransitionDensity
 
 R2 = 1 / np.sqrt(2)
@@ -31,7 +31,7 @@ def test_ndo_of_homo_lumo_singlet():
 @pytest.mark.skipif("CAS1414_OUT" not in os.environ, reason="local data only")
 def test_nto_lambdas_match_orca_n():
     """ORCA's printed NTO n is σ_k; ours agree within the CI truncation."""
-    from dyson_orca_tools.io.orca_output import parse_orca_output, parse_nto_occupations
+    from dyson_orca_tools.io.orca_output import parse_nto_occupations, parse_orca_output
 
     out = os.environ["CAS1414_OUT"]
     cas = parse_orca_output(out)

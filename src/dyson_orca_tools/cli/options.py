@@ -1,6 +1,7 @@
 """Shared options for CLI commands."""
 
 import typer
+
 from .console import fail
 
 # cube grid (lengths in Bohr as in PySCF)

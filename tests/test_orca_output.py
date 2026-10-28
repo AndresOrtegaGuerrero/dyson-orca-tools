@@ -1,11 +1,11 @@
 import pytest
 
 from dyson_orca_tools.io.orca_output import (
+    build_parameters,
+    ground_state,
+    initial_from_output,
     parse_orca_output,
     runs_from_output,
-    initial_from_output,
-    ground_state,
-    build_parameters,
 )
 
 FAKE_OUT = """\

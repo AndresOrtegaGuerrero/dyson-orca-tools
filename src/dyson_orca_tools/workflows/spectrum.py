@@ -2,12 +2,13 @@
 
 from dataclasses import dataclass
 from pathlib import Path
+
 import numpy as np
 
 from ..io.params import Parameters
 from ..spectral import (
-    DysonPeak,
     HARTREE_EV,
+    DysonPeak,
     build_peaks,
     midgap,
     omega_grid,

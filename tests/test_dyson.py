@@ -1,9 +1,10 @@
 import copy
+
 import numpy as np
 import pytest
+from conftest import README_ANION, README_INITIAL, fake_state
 
 from dyson_orca_tools.dyson import Dyson
-from conftest import fake_state, README_INITIAL, README_ANION
 
 N_ELEC = {"2": 2, "u": 1, "d": 1, "0": 0}
 

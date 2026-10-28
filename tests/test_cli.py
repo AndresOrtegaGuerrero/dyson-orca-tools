@@ -3,10 +3,10 @@ import csv
 import json
 
 import pytest
+from conftest import fake_state
 from typer.testing import CliRunner
 
 from dyson_orca_tools.cli.main import app
-from conftest import fake_state
 
 
 def _write_inputs(tmp_path, raw):

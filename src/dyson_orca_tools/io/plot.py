@@ -1,8 +1,9 @@
 """Publication-style plot of the multireference spectral function (matplotlib, optional)."""
 
+import csv
 from dataclasses import dataclass
 from pathlib import Path
-import csv
+
 import numpy as np
 
 try:
