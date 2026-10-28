@@ -1,11 +1,11 @@
 import pytest
 import typer
 
-from dyson_orca_tools.cli.main import _cube_grid
+from dyson_orca_tools.cli.options import parse_cube_grid
 
 
 def test_cube_grid_single_value_is_cubic():
-    assert _cube_grid("80", None, 14.0) == {
+    assert parse_cube_grid("80", None, 14.0) == {
         "nx": 80,
         "ny": 80,
         "nz": 80,
@@ -15,7 +15,7 @@ def test_cube_grid_single_value_is_cubic():
 
 
 def test_cube_grid_per_axis_and_spacing():
-    grid = _cube_grid("40,50,60", 0.2, 5.0)
+    grid = parse_cube_grid("40,50,60", 0.2, 5.0)
     assert (grid["nx"], grid["ny"], grid["nz"]) == (40, 50, 60)
     assert grid["resolution"] == 0.2
     assert grid["margin"] == 5.0
@@ -33,7 +33,7 @@ def test_cube_grid_per_axis_and_spacing():
 )
 def test_cube_grid_rejects_bad_values(points, spacing, margin):
     with pytest.raises(typer.Exit):
-        _cube_grid(points, spacing, margin)
+        parse_cube_grid(points, spacing, margin)
 
 
 def _h2_state():
