@@ -4,8 +4,7 @@ import numpy as np
 from pathlib import Path
 from typing import List
 
-from ..utils import validate_json_file, sannity_check
-from ..io.params import load_parameters
+from ..utils import validate_json_file
 from ..io.orca_output import (
     parse_orca_output,
     detect_pt2,
@@ -14,15 +13,6 @@ from ..io.orca_output import (
 )
 from ..mixing import mixing_matrix, overlap_matrix, composition
 from ..excited import nto_info, ndo_info, write_orbital_cubes
-from ..spectral import (
-    build_peaks,
-    spectral_function,
-    omega_grid,
-    relabel,
-    midgap,
-    shift_peaks,
-    HARTREE_EV,
-)
 
 from ..tdm import TransitionDensity
 from ..dipole import (
@@ -45,8 +35,6 @@ from ..ehmap import (
 )
 
 from ..io.tables import (
-    write_peaks_csv,
-    write_composition_csv,
     write_omega_csv,
     write_pair_csv,
     write_mixing_csv,
@@ -54,273 +42,16 @@ from ..io.tables import (
     write_orbital_csv,
 )
 
-from .console import ok, fail, warn, write_cube_or_warn, plot_or_warn
+from .console import ok, fail, warn
 from .options import CUBE_POINTS, CUBE_SPACING, CUBE_MARGIN, parse_cube_grid
-from . import dyson, prepare, plot
+from . import dyson, prepare, plot, spectrum
 
 app = typer.Typer(
     help="Dyson orbitals and multireference spectral functions from ORCA CASCI/CASSCF JSON."
 )
 
-for module in (dyson, prepare, plot):
+for module in (dyson, prepare, plot, spectrum):
     app.command(module.NAME)(module.run)
-
-
-@app.command("spectrum")
-def compute_spectrum(
-    initial_wfn: Path = typer.Option(
-        ..., "-i", "--initial-wfn", help="JSON of the initial (reference) state."
-    ),
-    parameters: Path = typer.Option(
-        ...,
-        "-p",
-        "--parameters",
-        help="Parameters v2: initial + list of final runs with roots.",
-    ),
-    output_dir: Path = typer.Option(
-        ".", "-o", "--output-dir", help="Directory for the outputs."
-    ),
-    eta: float = typer.Option(0.05, "--eta", help="Lorentzian broadening (eV)."),
-    omega_min: float = typer.Option(
-        None, "--omega-min", help="Grid start (eV); default: lowest peak - 1."
-    ),
-    omega_max: float = typer.Option(
-        None, "--omega-max", help="Grid end (eV); default: highest peak + 1."
-    ),
-    npts: int = typer.Option(2000, "--npts", help="Grid points."),
-    shift: float = typer.Option(
-        0.0,
-        "--shift",
-        help="Rigid shift added to all peak energies (eV), e.g. to align E_F.",
-    ),
-    shift_removal: float = typer.Option(
-        0.0, "--shift-removal", help="Extra shift (eV) for removal peaks only."
-    ),
-    shift_addition: float = typer.Option(
-        0.0, "--shift-addition", help="Extra shift (eV) for addition peaks only."
-    ),
-    align_fermi: bool = typer.Option(
-        False,
-        "--align-fermi",
-        help="Put ω = 0 at the midgap of the ground-state reference, so ω > 0 is electron addition.",
-    ),
-    cube: bool = typer.Option(
-        False,
-        "--cube/--no-cube",
-        help="Write one cube per peak (needs the [cube] extra).",
-    ),
-    cube_points: str = CUBE_POINTS,
-    cube_spacing: float = CUBE_SPACING,
-    cube_margin: float = CUBE_MARGIN,
-    plot: bool = typer.Option(
-        False,
-        "--plot/--no-plot",
-        help="Write spectral_function.png/.pdf (needs the [plot] extra).",
-    ),
-    vertical: bool = typer.Option(
-        False, "--vertical", help="Plot with the energy on the y axis."
-    ),
-    legend_outside: bool = typer.Option(
-        False, "--legend-outside", help="Place the legend outside the axes."
-    ),
-    label_threshold: float = typer.Option(
-        0.0,
-        "--label-threshold",
-        help="Label only peaks with strength >= this (curves keep all roots).",
-    ),
-    label_energy: bool = typer.Option(
-        False,
-        "--label-energy",
-        help="Append ω (eV, relative to the chosen zero) to each peak label.",
-    ),
-    common_reference: bool = typer.Option(
-        False,
-        "--common-reference",
-        help="Measure every spectrum from the lowest reference energy "
-        "instead of from its own reference state.",
-    ),
-    min_strength: float = typer.Option(
-        1e-8,
-        "--min-strength",
-        help="Drop peaks below this strength (e.g. spin-forbidden) before labelling.",
-    ),
-):
-    """Multireference spectral function ρ(ω) = η Σ_j |ϱ_j|² / ((ω − E_j)² + η²)."""
-    grid = parse_cube_grid(cube_points, cube_spacing, cube_margin) if cube else None
-    output_dir.mkdir(parents=True, exist_ok=True)
-
-    initial_wfn_data = validate_json_file(initial_wfn, "Initial")
-    try:
-        params = load_parameters(parameters)
-    except (ValueError, FileNotFoundError) as exc:
-        fail(f"Parameters: {exc}")
-    for run in params.runs:
-        sannity_check(initial_wfn_data, run.data)
-    ok(
-        f"Loaded {len(params.initials)} reference state(s), {len(params.runs)} final run(s), "
-        f"{sum(len(r.roots) for r in params.runs)} root(s)."
-    )
-
-    typer.secho("🔄 Computing Dyson orbitals...", fg=typer.colors.BLUE)
-    try:
-        peaks = build_peaks(initial_wfn_data, params, min_strength=min_strength)
-    except ValueError as exc:
-        fail(str(exc))
-    n_all = sum(len(r.roots) for r in params.runs) * len(params.initials)
-    if len(peaks) < n_all:
-        typer.echo(
-            f"   dropped {n_all - len(peaks)} peak(s) with strength < {min_strength}"
-        )
-
-    # energy_zero: each reference state has its own zero, unless --common-reference
-    e0 = min(s.energy for s in params.initials)
-    de_ref = {s.label: (s.energy - e0) * HARTREE_EV for s in params.initials}
-    ground = min(params.initials, key=lambda s: s.energy).label
-
-    if common_reference:
-        for p in peaks:
-            p.omega += de_ref[p.initial]
-
-    mu = 0.0
-    if align_fermi:
-        try:
-            mu = midgap(peaks, ground)
-        except ValueError as exc:
-            fail(f"Cannot align Fermi level: {exc}")
-        ok(f"Midgap of '{ground}': μ = {mu:.3f} eV; ω → ω − μ.")
-    shift_peaks(
-        peaks,
-        mu=mu,
-        shift=shift,
-        shift_removal=shift_removal,
-        shift_addition=shift_addition,
-    )
-    labels = [s.label for s in params.initials]
-    opts = dict(
-        eta=eta,
-        omega_min=omega_min,
-        omega_max=omega_max,
-        npts=npts,
-        zero_note=(
-            f"mu = {mu:.4f} eV, shift = {shift} eV, shift_removal = {shift_removal} eV, "
-            f"shift_addition = {shift_addition} eV, common_reference = {common_reference}"
-        ),
-        plot=plot,
-        vertical=vertical,
-        legend_outside=legend_outside,
-        label_threshold=label_threshold,
-        label_energy=label_energy,
-    )
-
-    # One spectrum per (reference, ion multiplicity): peaks of different ion
-    # multiplicities are never summed (their relative weights need the spin
-    # factors, not implemented). Folders: <ref>/ or <ref>/m<mult>/ when several.
-    leaves = 0
-    for lab in labels:
-        mine = [p for p in peaks if p.initial == lab]
-        if not mine:
-            typer.secho(f"\nreference {lab}: no peaks left", fg=typer.colors.YELLOW)
-            continue
-        ref_dir = output_dir if len(labels) == 1 else output_dir / lab
-        mults = sorted({p.mult for p in mine})
-        for m in mults:
-            out = ref_dir if len(mults) == 1 else ref_dir / f"m{m}"
-            out.mkdir(parents=True, exist_ok=True)
-            typer.secho(
-                f"\nreference {lab}, ion multiplicity {m}: E_ref − E_0 = {de_ref[lab]:.3f} eV"
-                + (" (common zero)" if common_reference else ""),
-                fg=typer.colors.BLUE,
-            )
-            subset = relabel(
-                [p for p in mine if p.mult == m]
-            )  # in place: table below matches
-            _write_spectrum(subset, out, initial_wfn_data, grid=grid, **opts)
-            leaves += 1
-
-    if leaves > 1:  # one table over everything; labels as in the leaf folders
-        write_peaks_csv(output_dir / "dyson_peaks.csv", peaks, with_initial=True)
-        ok(f"all references: {output_dir / 'dyson_peaks.csv'}")
-
-
-def _write_spectrum(
-    peaks,
-    out_dir: Path,
-    initial_wfn_data: dict,
-    *,
-    eta,
-    omega_min,
-    omega_max,
-    npts,
-    zero_note,
-    grid,
-    plot,
-    vertical,
-    legend_outside,
-    label_threshold,
-    label_energy,
-):
-    """Table, CSVs, ρ(ω), AO coefficients, cubes and plot for one reference state."""
-    typer.echo(
-        f"   {'label':>6} {'mult':>4} {'omega/eV':>10} {'strength':>9} {'Σc²':>6}  branch  composition (d_p²/strength)"
-    )
-    for p in peaks:
-        comp = "  ".join(f"{lab} {w:.2f}" for lab, w in p.composition())
-        typer.echo(
-            f"   {p.label:>6} {p.mult:>4} {p.omega:>10.3f} {p.strength:>9.4f} {p.ci_norm:>6.3f}  "
-            f"{'CASCI' if p.casci else 'CASSCF':6s}  {comp}"
-        )
-    write_peaks_csv(out_dir / "dyson_peaks.csv", peaks)
-    write_composition_csv(out_dir / "dyson_composition.csv", peaks)
-
-    omegas = omega_grid(peaks, npts=npts)
-    lo = omegas[0] if omega_min is None else omega_min
-    hi = omegas[-1] if omega_max is None else omega_max
-    omega = np.linspace(lo, hi, npts)
-    rho = spectral_function(peaks, omega, eta=eta)
-    np.savetxt(
-        out_dir / "spectral_function.dat",
-        np.column_stack([omega, rho]),
-        header=f"omega_eV  rho   (eta = {eta} eV, {zero_note})",
-    )
-
-    coeffs = np.column_stack([p.coeff_ao for p in peaks])
-    np.savetxt(
-        out_dir / "dyson_orbitals_ao.txt",
-        coeffs,
-        header="columns = peaks "
-        + " ".join(p.label for p in peaks)
-        + " ; rows = AOs (ORCA order)",
-    )
-
-    if grid is not None:
-        for p in peaks:
-            name = out_dir / f"dyson_{p.side}{p.label.split(',')[1]}_m{p.mult}.cube"
-            if not write_cube_or_warn(initial_wfn_data, p.coeff_ao, name, grid):
-                break
-        else:
-            ok(f"{len(peaks)} cube files written.")
-
-    if plot:
-        plot_or_warn(
-            out_dir,
-            vertical=vertical,
-            legend_outside=legend_outside,
-            label_threshold=label_threshold,
-            label_energy=label_energy,
-        )
-    ok(
-        f"Written to {out_dir}: dyson_peaks.csv, dyson_composition.csv, "
-        "spectral_function.dat, dyson_orbitals_ao.txt"
-    )
-
-
-def _parse_state_spec(spec: str) -> tuple[int, int]:
-    """'3:0' -> (3, 0)."""
-    try:
-        mult, root = spec.split(":")
-        return int(mult), int(root)
-    except ValueError:
-        raise ValueError(f"--initial-state '{spec}': expected MULT:ROOT, e.g. 1:0")
 
 
 @app.command("ehmap")

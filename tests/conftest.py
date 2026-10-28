@@ -1,6 +1,7 @@
 import copy
 import numpy as np
 import pytest
+from dyson_orca_tools.io.params import parse_parameters
 
 
 def fake_state(
@@ -95,3 +96,10 @@ def readme_v3(readme_v2) -> dict:
     }
     raw["parameters"]["initial"] = [singlet, triplet]
     return raw
+
+
+def load_params(raw, seed_final=0, rotate=None):
+    params = parse_parameters(raw)
+    for run in params.runs:
+        run.data = fake_state(4, run.mult, 0, seed=seed_final, rotate_active=rotate)
+    return fake_state(4, params.initial.mult, 0), params
