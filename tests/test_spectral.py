@@ -13,14 +13,7 @@ from dyson_orca_tools.spectral import (
     midgap,
     shift_peaks,
 )
-from conftest import fake_state
-
-
-def _load(raw, seed_final=0, rotate=None):
-    params = parse_parameters(raw)
-    for run in params.runs:
-        run.data = fake_state(4, run.mult, 0, seed=seed_final, rotate_active=rotate)
-    return fake_state(4, params.initial.mult, 0), params
+from conftest import load_params
 
 
 def test_peak_energy_signs():
@@ -29,7 +22,7 @@ def test_peak_energy_signs():
 
 
 def test_lorentzian_area_is_pi_times_strength(readme_v2):
-    initial, params = _load(readme_v2)
+    initial, params = load_params(readme_v2)
     peaks = build_peaks(initial, params)
     omega = np.linspace(-200, 200, 400_001)
     area = np.trapezoid(spectral_function(peaks, omega, eta=0.05), omega)
@@ -37,7 +30,7 @@ def test_lorentzian_area_is_pi_times_strength(readme_v2):
 
 
 def test_readme_strength_and_labels(readme_v2):
-    initial, params = _load(readme_v2)
+    initial, params = load_params(readme_v2)
     peaks = build_peaks(initial, params)
     by_label = {p.label: p for p in peaks}
     assert set(by_label) == {"+,0", "+,1", "-,0"}
@@ -54,7 +47,7 @@ def test_forbidden_spin_has_zero_strength(readme_v2):
         "mult": 4,  # quartet from a singlet: ΔS = 3/2
         "roots": [{"energy": -230.2, "spin_ci": {"[uuu0]": 1.0}}],
     }
-    initial, params = _load(readme_v2)
+    initial, params = load_params(readme_v2)
     peaks = build_peaks(initial, params)
     assert [p for p in peaks if p.side == "-"][0].strength == pytest.approx(
         0.0, abs=1e-12
@@ -64,7 +57,7 @@ def test_forbidden_spin_has_zero_strength(readme_v2):
 
 
 def test_non_orthogonal_pair_takes_casscf_branch(readme_v2):
-    initial, params = _load(
+    initial, params = load_params(
         readme_v2, seed_final=1
     )  # different MO set for the charged runs
     peaks = build_peaks(initial, params)
@@ -73,7 +66,7 @@ def test_non_orthogonal_pair_takes_casscf_branch(readme_v2):
 
 
 def test_omega_grid_pads_both_sides(readme_v2):
-    initial, params = _load(readme_v2)
+    initial, params = load_params(readme_v2)
     peaks = build_peaks(initial, params)
     grid = omega_grid(peaks, pad=1.0, npts=11)
     assert grid[0] == pytest.approx(min(p.omega for p in peaks) - 1.0)
@@ -82,7 +75,7 @@ def test_omega_grid_pads_both_sides(readme_v2):
 
 def test_missing_energy_is_rejected(readme_v2):
     del readme_v2["parameters"]["final"][0]["roots"][1]["energy"]
-    initial, params = _load(readme_v2)
+    initial, params = load_params(readme_v2)
     with pytest.raises(ValueError, match="energy"):
         build_peaks(initial, params)
 
@@ -101,7 +94,7 @@ def test_determinant_ms_must_match_mult(readme_v2):
 
 
 def test_two_initials_give_two_spectra(readme_v3):
-    initial, params = _load(readme_v3)
+    initial, params = load_params(readme_v3)
     peaks = build_peaks(initial, params)
     by_init = {lab: [p for p in peaks if p.initial == lab] for lab in ("m1", "T1")}
     assert len(by_init["m1"]) == len(by_init["T1"]) == 3  # 3 roots in the fixture
@@ -111,13 +104,13 @@ def test_two_initials_give_two_spectra(readme_v3):
 
 def test_single_initial_peaks_unchanged(readme_v2):
     # labels and energies exactly as before PR 2
-    initial, params = _load(readme_v2)
+    initial, params = load_params(readme_v2)
     labels = [(p.initial, p.label) for p in build_peaks(initial, params)]
     assert labels == [("m1", "-,0"), ("m1", "+,0"), ("m1", "+,1")]
 
 
 def test_omega_is_relative_to_each_initial(readme_v3):
-    initial, params = _load(readme_v3)
+    initial, params = load_params(readme_v3)
     peaks = build_peaks(initial, params)
     anion0 = {p.initial: p.omega for p in peaks if p.side == "+" and p.label == "+,0"}
     # T1 sits 0.1 Eh above S0 in the fixture, so its addition peak is 0.1 Eh lower
