@@ -48,60 +48,12 @@ from ..ehmap import (
     active_occupations,
 )
 
+from .console import ok, fail, warn, write_cube_or_warn, plot_or_warn
+from .options import CUBE_POINTS, CUBE_SPACING, CUBE_MARGIN, parse_cube_grid
+
 app = typer.Typer(
     help="Dyson orbitals and multireference spectral functions from ORCA CASCI/CASSCF JSON."
 )
-
-
-def _ok(msg):
-    typer.secho(f"✅ {msg}", fg=typer.colors.GREEN)
-
-
-def _fail(msg):
-    typer.secho(f"❌ {msg}", fg=typer.colors.RED)
-    raise typer.Exit(1)
-
-
-# cube grid, shared by every command that writes cubes (lengths in Bohr, as in PySCF)
-CUBE_POINTS = typer.Option(
-    "80", "--cube-points", help="Cube grid points: N or NX,NY,NZ."
-)
-CUBE_SPACING = typer.Option(
-    None,
-    "--cube-spacing",
-    help="Approximate cube grid spacing (Bohr); overrides --cube-points.",
-)
-CUBE_MARGIN = typer.Option(
-    14.0, "--cube-margin", help="Cube box padding around the molecule (Bohr)."
-)
-
-
-def _cube_grid(points: str, spacing: float | None, margin: float) -> dict:
-    """CLI grid options -> keyword arguments of ``write_cube``."""
-    try:
-        n = [int(x) for x in points.split(",")]
-    except ValueError:
-        _fail(f"--cube-points: '{points}' is not N or NX,NY,NZ")
-    if len(n) == 1:
-        n = n * 3
-    if len(n) != 3 or min(n) < 2:
-        _fail(f"--cube-points: '{points}' needs 1 or 3 integers >= 2")
-    if spacing is not None and spacing <= 0:
-        _fail("--cube-spacing must be positive")
-    if margin < 0:
-        _fail("--cube-margin must be >= 0")
-    nx, ny, nz = n
-    return {"nx": nx, "ny": ny, "nz": nz, "resolution": spacing, "margin": margin}
-
-
-def _write_cube_or_warn(state: dict, coeff_ao, filename: Path, grid: dict):
-    try:
-        from ..io.cube import write_cube
-    except ImportError as exc:
-        typer.secho(f"⚠️  {exc}", fg=typer.colors.YELLOW)
-        return False
-    write_cube(state, coeff_ao, str(filename), **grid)
-    return True
 
 
 @app.command("dyson")
@@ -126,16 +78,16 @@ def compute_dyson_orbital(
     cube_margin: float = CUBE_MARGIN,
 ):
     """Dyson orbital between one initial and one final state."""
-    grid = _cube_grid(cube_points, cube_spacing, cube_margin) if cube else None
+    grid = parse_cube_grid(cube_points, cube_spacing, cube_margin) if cube else None
     output_dir.mkdir(parents=True, exist_ok=True)
 
     initial_wfn_data = validate_json_file(initial_wfn, "Initial")
     final_wfn_data = validate_json_file(final_wfn, "Final")
     parameters_data = validate_json_file(parameters, "Parameters")
-    _ok("Input files are valid JSONs.")
+    ok("Input files are valid JSONs.")
     sannity_check(initial_wfn_data, final_wfn_data)
     parameters_sannity_check(parameters_data)
-    _ok("Inputs passed sanity checks.")
+    ok("Inputs passed sanity checks.")
 
     typer.secho("🔄 Computing Dyson orbital...", fg=typer.colors.BLUE)
     dyson = Dyson(initial_wfn_data, final_wfn_data, parameters_data)
@@ -156,10 +108,10 @@ def compute_dyson_orbital(
         dyson_ao,
         header="Dyson orbital, AO coefficients (ORCA order)",
     )
-    if cube and _write_cube_or_warn(
+    if cube and write_cube_or_warn(
         initial_wfn_data, dyson_ao, output_dir / "dyson_orbital.cube", grid
     ):
-        _ok(f"cube written: {output_dir / 'dyson_orbital.cube'}")
+        ok(f"cube written: {output_dir / 'dyson_orbital.cube'}")
     typer.secho("🚀 Dyson orbital computed successfully!", fg=typer.colors.CYAN)
 
 
@@ -243,17 +195,17 @@ def compute_spectrum(
     ),
 ):
     """Multireference spectral function ρ(ω) = η Σ_j |ϱ_j|² / ((ω − E_j)² + η²)."""
-    grid = _cube_grid(cube_points, cube_spacing, cube_margin) if cube else None
+    grid = parse_cube_grid(cube_points, cube_spacing, cube_margin) if cube else None
     output_dir.mkdir(parents=True, exist_ok=True)
 
     initial_wfn_data = validate_json_file(initial_wfn, "Initial")
     try:
         params = load_parameters(parameters)
     except (ValueError, FileNotFoundError) as exc:
-        _fail(f"Parameters: {exc}")
+        fail(f"Parameters: {exc}")
     for run in params.runs:
         sannity_check(initial_wfn_data, run.data)
-    _ok(
+    ok(
         f"Loaded {len(params.initials)} reference state(s), {len(params.runs)} final run(s), "
         f"{sum(len(r.roots) for r in params.runs)} root(s)."
     )
@@ -262,7 +214,7 @@ def compute_spectrum(
     try:
         peaks = build_peaks(initial_wfn_data, params, min_strength=min_strength)
     except ValueError as exc:
-        _fail(str(exc))
+        fail(str(exc))
     n_all = sum(len(r.roots) for r in params.runs) * len(params.initials)
     if len(peaks) < n_all:
         typer.echo(
@@ -283,8 +235,8 @@ def compute_spectrum(
         try:
             mu = midgap(peaks, ground)
         except ValueError as exc:
-            _fail(f"Cannot align Fermi level: {exc}")
-        _ok(f"Midgap of '{ground}': μ = {mu:.3f} eV; ω → ω − μ.")
+            fail(f"Cannot align Fermi level: {exc}")
+        ok(f"Midgap of '{ground}': μ = {mu:.3f} eV; ω → ω − μ.")
     shift_peaks(
         peaks,
         mu=mu,
@@ -336,7 +288,7 @@ def compute_spectrum(
 
     if leaves > 1:  # one table over everything; labels as in the leaf folders
         _write_peaks_csv(output_dir / "dyson_peaks.csv", peaks, with_initial=True)
-        _ok(f"all references: {output_dir / 'dyson_peaks.csv'}")
+        ok(f"all references: {output_dir / 'dyson_peaks.csv'}")
 
 
 def _write_peaks_csv(path: Path, peaks, with_initial: bool = False):
@@ -422,20 +374,20 @@ def _write_spectrum(
     if grid is not None:
         for p in peaks:
             name = out_dir / f"dyson_{p.side}{p.label.split(',')[1]}_m{p.mult}.cube"
-            if not _write_cube_or_warn(initial_wfn_data, p.coeff_ao, name, grid):
+            if not write_cube_or_warn(initial_wfn_data, p.coeff_ao, name, grid):
                 break
         else:
-            _ok(f"{len(peaks)} cube files written.")
+            ok(f"{len(peaks)} cube files written.")
 
     if plot:
-        _plot_or_warn(
+        plot_or_warn(
             out_dir,
             vertical=vertical,
             legend_outside=legend_outside,
             label_threshold=label_threshold,
             label_energy=label_energy,
         )
-    _ok(
+    ok(
         f"Written to {out_dir}: dyson_peaks.csv, dyson_composition.csv, "
         "spectral_function.dat, dyson_orbitals_ao.txt"
     )
@@ -496,7 +448,7 @@ def prepare_parameters(
         raw = build_parameters(cas, pairs, states)
         params = parse_parameters(raw)  # validates before writing
     except (ValueError, FileNotFoundError) as exc:
-        _fail(str(exc))
+        fail(str(exc))
 
     for run in raw["parameters"]["final"]:  # paths relative to the parameters file
         run["file"] = os.path.relpath(
@@ -505,7 +457,7 @@ def prepare_parameters(
     with open(output, "w") as f:
         json.dump(raw, f, indent=2)
     for ini in params.initials:
-        _ok(
+        ok(
             f"initial {ini.label}: CAS({ini.nelc},{ini.norb}) mult {ini.mult}, "
             f"E = {ini.energy} Eh, {len(ini.spin_ci)} determinants"
         )
@@ -515,36 +467,7 @@ def prepare_parameters(
             f"   final {run.file}: mult {run.mult}, {len(run.roots)} root(s), "
             f"Σc² = {', '.join(f'{n:.3f}' for n in norm)}"
         )
-    _ok(f"written {output}")
-
-
-def _plot_or_warn(
-    out_dir: Path,
-    title: str | None = None,
-    vertical: bool = False,
-    legend_outside: bool = False,
-    label_threshold: float = 0.0,
-    label_energy: bool = False,
-):
-    try:
-        from ..io.plot import read_outputs, plot_spectrum
-    except ImportError as exc:
-        typer.secho(f"⚠️  {exc}", fg=typer.colors.YELLOW)
-        return
-    peaks, omega, rho, eta = read_outputs(out_dir)
-    path = plot_spectrum(
-        peaks,
-        omega,
-        rho,
-        out_dir / "spectral_function.png",
-        eta=eta,
-        title=title,
-        label_threshold=label_threshold,
-        label_energy=label_energy,
-        orientation="vertical" if vertical else "horizontal",
-        legend="outside" if legend_outside else "inside",
-    )
-    _ok(f"plot written: {path} (+ .pdf)")
+    ok(f"written {output}")
 
 
 @app.command("plot")
@@ -576,7 +499,7 @@ def plot_outputs(
     ),
 ):
     """Re-plot a spectrum from the files written by `spectrum` (no recomputation)."""
-    _plot_or_warn(
+    plot_or_warn(
         output_dir, title, vertical, legend_outside, label_threshold, label_energy
     )
 
@@ -645,7 +568,7 @@ def electron_hole_map(
     Ω = 0 with p ≈ 1 = one orbital changed but as a double substitution of spin orbitals (excitation +
     spin recoupling): no one-electron transition density, dipole-dark from the reference root.
     """
-    grid = _cube_grid(cube_points, cube_spacing, cube_margin) if cubes else None
+    grid = parse_cube_grid(cube_points, cube_spacing, cube_margin) if cubes else None
     output_dir.mkdir(parents=True, exist_ok=True)
     cas = parse_orca_output(orca_out)
     text = Path(orca_out).read_text()
@@ -657,7 +580,7 @@ def electron_hole_map(
                 f"   several multiplicity blocks {cas.mults}: using --mult {mult}"
             )
     elif mult not in cas.mults:
-        _fail(f"no multiplicity {mult} block in {orca_out} (found {cas.mults})")
+        fail(f"no multiplicity {mult} block in {orca_out} (found {cas.mults})")
     typer.echo(f"   block mult {mult}, PT2 in output: {pt2 or 'none'}")
     typer.echo(
         "   Ω single-excitation character | CT charge-transfer fraction | PR_frag fragments involved | "
@@ -675,7 +598,7 @@ def electron_hole_map(
     )
     if qd or mixing:
         if pt2 != "QD-NEVPT2":
-            _fail(
+            fail(
                 f"--qd/--mixing need a QD-NEVPT2 run; this output has {pt2 or 'no PT2'} "
                 "(plain NEVPT2 does not mix roots — analyse the CASSCF roots)"
             )
@@ -767,7 +690,7 @@ def electron_hole_map(
                 write_orbital_cubes(state, vecs, names, output_dir / "cubes", **grid)
                 typer.echo(f"        {len(names)} cubes -> {output_dir / 'cubes'}")
             except ImportError as exc:
-                typer.secho(f"⚠️  {exc}", fg=typer.colors.YELLOW)
+                warn(str(exc))
 
     with open(output_dir / f"{tag}summary.json", "w") as f:
         json.dump(
@@ -812,7 +735,7 @@ def electron_hole_map(
         for i, (o, row) in enumerate(zip(occ, pop), start=1):
             typer.echo(f"   {i:>4} {o:6.3f} " + "".join(f"{x:11.2f}" for x in row))
 
-    _ok(f"written {output_dir}")
+    ok(f"written {output_dir}")
 
 
 def _write_omega_csv(path, om, labels):
