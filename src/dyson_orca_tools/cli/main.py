@@ -1,4 +1,3 @@
-import csv
 import json
 import os
 import typer
@@ -46,6 +45,16 @@ from ..ehmap import (
     load_fragments,
     orbital_fragment_populations,
     active_occupations,
+)
+
+from ..io.tables import (
+    write_peaks_csv,
+    write_composition_csv,
+    write_omega_csv,
+    write_pair_csv,
+    write_mixing_csv,
+    write_dipole_csv,
+    write_orbital_csv,
 )
 
 from .console import ok, fail, warn, write_cube_or_warn, plot_or_warn
@@ -287,25 +296,8 @@ def compute_spectrum(
             leaves += 1
 
     if leaves > 1:  # one table over everything; labels as in the leaf folders
-        _write_peaks_csv(output_dir / "dyson_peaks.csv", peaks, with_initial=True)
+        write_peaks_csv(output_dir / "dyson_peaks.csv", peaks, with_initial=True)
         ok(f"all references: {output_dir / 'dyson_peaks.csv'}")
-
-
-def _write_peaks_csv(path: Path, peaks, with_initial: bool = False):
-    with open(path, "w", newline="") as f:
-        w = csv.writer(f)
-        head = ["label", "side", "mult", "omega_eV", "strength", "branch"]
-        w.writerow((["initial"] if with_initial else []) + head)
-        for p in peaks:
-            row = [
-                p.label,
-                p.side,
-                p.mult,
-                f"{p.omega:.6f}",
-                f"{p.strength:.6f}",
-                "CASCI" if p.casci else "CASSCF",
-            ]
-            w.writerow(([p.initial] if with_initial else []) + row)
 
 
 def _write_spectrum(
@@ -335,21 +327,8 @@ def _write_spectrum(
             f"   {p.label:>6} {p.mult:>4} {p.omega:>10.3f} {p.strength:>9.4f} {p.ci_norm:>6.3f}  "
             f"{'CASCI' if p.casci else 'CASSCF':6s}  {comp}"
         )
-    _write_peaks_csv(out_dir / "dyson_peaks.csv", peaks)
-
-    with open(out_dir / "dyson_composition.csv", "w", newline="") as f:
-        w = csv.writer(f)
-        w.writerow(["label", "strength", "ci_norm", "leading_det", *peaks[0].mo_labels])
-        for p in peaks:  # d_p² per initial active MO; the row sums to the strength
-            w.writerow(
-                [
-                    p.label,
-                    f"{p.strength:.6f}",
-                    f"{p.ci_norm:.6f}",
-                    p.leading_det,
-                    *(f"{d * d:.6f}" for d in p.coeff_mo),
-                ]
-            )
+    write_peaks_csv(out_dir / "dyson_peaks.csv", peaks)
+    write_composition_csv(out_dir / "dyson_composition.csv", peaks)
 
     omegas = omega_grid(peaks, npts=npts)
     lo = omegas[0] if omega_min is None else omega_min
@@ -650,7 +629,7 @@ def electron_hole_map(
         if dip is not None:
             mu = transition_dipole(d_ao, dip)
             m["mu"] = mu.tolist()
-            _write_dipole_csv(
+            write_dipole_csv(
                 output_dir / f"{tag}dipole_{i}_{j}.csv",
                 fragment_contributions(d_ao, dip, frag),
                 fragment_charges(d_ao, s, frag),
@@ -659,7 +638,7 @@ def electron_hole_map(
             )
         summary[f"{i}:{j}"], omegas[(i, j)] = m, om
         np.save(output_dir / f"{tag}gamma_{i}_{j}.npy", g)
-        _write_omega_csv(output_dir / f"{tag}omega_{i}_{j}.csv", om, labels)
+        write_omega_csv(output_dir / f"{tag}omega_{i}_{j}.csv", om, labels)
         typer.echo(
             f"   {i}→{j}: Ω = {m['Omega']:.3f}  CT = {m['CT']:.2f}  PR_frag = {m['PR_frag']:.1f}  "
             f"PR_NTO = {m['PR_NTO']:.1f}  λ = {', '.join(f'{x:.3f}' for x in m['nto_lambda'][:3])}  "
@@ -697,14 +676,14 @@ def electron_hole_map(
             {"mult": mult, "pt2": pt2, "qd_states": qd, "pairs": summary}, f, indent=2
         )
     if all_pairs:
-        _write_pair_table(output_dir / f"{tag}omega_pairs.csv", summary, sorted(ci))
+        write_pair_csv(output_dir / f"{tag}omega_pairs.csv", summary, sorted(ci))
     if mixing:
         e, u = mixing_matrix(qdres.heff)
         u_ov = overlap_matrix(
             {r.index: r.spin_ci for r in cas.roots if r.mult == mult},
             {r.index: r.spin_ci for r in qdres.roots},
         )
-        _write_mixing_csv(output_dir / f"m{mult}_qd_mixing.csv", u, e, qdres.energies)
+        write_mixing_csv(output_dir / f"m{mult}_qd_mixing.csv", u, e, qdres.energies)
         for K, comp in enumerate(composition(u)):
             typer.echo(
                 f"   QD root {K} ({(e[K] - e[0]) * 27.2114:.3f} eV) = "
@@ -728,7 +707,7 @@ def electron_hole_map(
     if orbitals:
         occ = active_occupations(state, cas.norb)
         pop = orbital_fragment_populations(c_act, s, frag)
-        _write_orbital_table(output_dir / "active_orbitals.csv", occ, pop, labels)
+        write_orbital_csv(output_dir / "active_orbitals.csv", occ, pop, labels)
         typer.echo(
             f"   {'act':>4} {'occ':>6} " + "".join(f"{label:>11}" for label in labels)
         )
@@ -736,72 +715,6 @@ def electron_hole_map(
             typer.echo(f"   {i:>4} {o:6.3f} " + "".join(f"{x:11.2f}" for x in row))
 
     ok(f"written {output_dir}")
-
-
-def _write_omega_csv(path, om, labels):
-    with open(path, "w", newline="") as f:
-        w = csv.writer(f)
-        w.writerow(["hole\\electron", *labels])
-        for lab, row in zip(labels, om):
-            w.writerow([lab, *(f"{x:.6e}" for x in row)])
-
-
-def _write_pair_table(path, summary, roots):
-    with open(path, "w", newline="") as f:
-        w = csv.writer(f)
-        w.writerow(["I\\J", *roots])
-        for i in roots:
-            w.writerow(
-                [
-                    i,
-                    *(
-                        f"{summary[f'{min(i, j)}:{max(i, j)}']['Omega']:.4e}"
-                        if i != j
-                        else "-"
-                        for j in roots
-                    ),
-                ]
-            )
-
-
-def _write_mixing_csv(path, u, e, e_orca):
-    with open(path, "w", newline="") as f:
-        w = csv.writer(f)
-        w.writerow(
-            [
-                "QD_root",
-                "E_eigh_Eh",
-                "E_orca_Eh",
-                *(f"U2_CAS{J}" for J in range(u.shape[0])),
-            ]
-        )
-        for K in range(u.shape[1]):
-            w.writerow(
-                [
-                    K,
-                    f"{e[K]:.6f}",
-                    f"{e_orca[K]:.6f}",
-                    *(f"{x:.4f}" for x in u[:, K] ** 2),
-                ]
-            )
-
-
-def _write_dipole_csv(path, per_frag, q_frag, mu, labels):
-    """Origin = molecular centre; a fragment's μ_A shifts by q_A·ΔR under an origin change."""
-    with open(path, "w", newline="") as f:
-        w = csv.writer(f)
-        w.writerow(["fragment", "mu_x", "mu_y", "mu_z", "transition_charge"])
-        for lab, row, q in zip(labels, per_frag, q_frag):
-            w.writerow([lab, *(f"{x:+.6f}" for x in row), f"{q:+.4f}"])
-        w.writerow(["total", *(f"{x:+.6f}" for x in mu), f"{q_frag.sum():+.4f}"])
-
-
-def _write_orbital_table(path, occ, pop, labels):
-    with open(path, "w", newline="") as f:
-        w = csv.writer(f)
-        w.writerow(["active_mo", "occupation", *labels])
-        for i, (o, row) in enumerate(zip(occ, pop), start=1):
-            w.writerow([i, f"{o:.4f}", *(f"{x:.4f}" for x in row)])
 
 
 if __name__ == "__main__":
