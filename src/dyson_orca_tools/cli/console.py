@@ -2,11 +2,20 @@
 
 from contextlib import contextmanager
 from pathlib import Path
+
 import typer
 
 
 def ok(msg):
     typer.secho(f"✅ {msg}", fg=typer.colors.GREEN)
+
+
+def step(msg):  # a stage message
+    typer.secho(msg, fg=typer.colors.BLUE)
+
+
+def result(msg):  # result message
+    typer.secho(msg, fg=typer.colors.CYAN)
 
 
 def warn(msg):
@@ -46,7 +55,7 @@ def plot_or_warn(
     label_energy: bool = False,
 ):
     try:
-        from ..io.plot import read_outputs, plot_spectrum
+        from ..io.plot import plot_spectrum, read_outputs
     except ImportError as exc:
         warn(str(exc))
         return

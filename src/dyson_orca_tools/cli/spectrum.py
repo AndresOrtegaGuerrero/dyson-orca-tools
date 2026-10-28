@@ -1,15 +1,16 @@
 """Multireference spectral function"""
 
 from pathlib import Path
-import typer
-from .options import CUBE_POINTS, CUBE_SPACING, CUBE_MARGIN, parse_cube_grid
-from ..io.params import load_parameters
-from ..workflows.spectrum import SpectrumOptions, run_spectrum
-from .console import cli_errors, ok, warn, plot_or_warn, write_cube_or_warn
-from ..utils import validate_json_file, sanity_check
-from ..io.tables import write_peaks_csv, write_composition_csv
-import numpy as np
 
+import numpy as np
+import typer
+
+from ..io.params import load_parameters
+from ..io.tables import write_composition_csv, write_peaks_csv
+from ..utils import sanity_check, validate_json_file
+from ..workflows.spectrum import SpectrumOptions, run_spectrum
+from .console import cli_errors, ok, plot_or_warn, warn, write_cube_or_warn
+from .options import CUBE_MARGIN, CUBE_POINTS, CUBE_SPACING, parse_cube_grid
 
 NAME = "spectrum"
 

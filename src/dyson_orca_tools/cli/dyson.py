@@ -1,13 +1,14 @@
 """dyson: Dyson orbital between one inition and one final state"""
 
 from pathlib import Path
+
 import numpy as np
 import typer
 
-from ..utils import validate_json_file, sanity_check, parameters_sanity_check
 from ..dyson import Dyson
+from ..utils import parameters_sanity_check, sanity_check, validate_json_file
 from .console import cli_errors, ok, write_cube_or_warn
-from .options import CUBE_POINTS, CUBE_SPACING, CUBE_MARGIN, parse_cube_grid
+from .options import CUBE_MARGIN, CUBE_POINTS, CUBE_SPACING, parse_cube_grid
 
 NAME = "dyson"
 

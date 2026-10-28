@@ -1,7 +1,7 @@
 import pytest
+from conftest import fake_state
 
 from dyson_orca_tools.utils import sanity_check
-from conftest import fake_state
 
 
 def test_sanity_check_ignores_json_multiplicity():

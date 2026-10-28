@@ -1,8 +1,9 @@
 """Fragment electron-hole map from an AO transition density (Plasser & Lischka J. Chem. Theory Comput. (2012) 8 (8): 2777–2789.)"""
 
-import re
-import numpy as np
 import json
+import re
+
+import numpy as np
 
 _LABEL = re.compile(r"^(\d+)[A-Za-z]+")  # '12C  1pz' -> 12
 

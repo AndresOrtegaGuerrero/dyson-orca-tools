@@ -4,9 +4,9 @@ from pathlib import Path
 
 import numpy as np
 import pytest
-
-from dyson_orca_tools.dipole import ao_dipole, transition_dipole, fragment_contributions
 from conftest import fake_state
+
+from dyson_orca_tools.dipole import ao_dipole, fragment_contributions, transition_dipole
 
 
 def test_fragment_contributions_sum_to_total():
@@ -27,9 +27,9 @@ def test_missing_dipole_raises():
 @pytest.mark.skipif("CAS1414_OUT" not in os.environ, reason="local cas1414 data only")
 def test_report_against_orca_dipoles():
     """0→4: dominant y component within 5 % of ORCA's DY = -0.00696 (truncated CI vectors)."""
-    from dyson_orca_tools.tdm import TransitionDensity
     from dyson_orca_tools.ehmap import active_mo_coefficients
     from dyson_orca_tools.io.orca_output import parse_orca_output
+    from dyson_orca_tools.tdm import TransitionDensity
 
     out = Path(os.environ["CAS1414_OUT"])
     cas = parse_orca_output(out)

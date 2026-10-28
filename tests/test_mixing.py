@@ -3,12 +3,12 @@ import os
 import numpy as np
 import pytest
 
-from dyson_orca_tools.mixing import mixing_matrix, overlap_matrix, composition
 from dyson_orca_tools.io.orca_output import (
     detect_pt2,
     parse_pt2_energies,
     parse_qdnevpt2,
 )
+from dyson_orca_tools.mixing import composition, mixing_matrix, overlap_matrix
 
 NEVPT2_TABLE = """ NEVPT2 TOTAL ENERGIES
 -----------------------

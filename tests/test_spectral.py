@@ -1,19 +1,20 @@
+import copy
+
 import numpy as np
 import pytest
-import copy
+from conftest import load_params
 
 from dyson_orca_tools.io.params import parse_parameters
 from dyson_orca_tools.spectral import (
     HARTREE_EV,
+    DysonPeak,
     build_peaks,
+    midgap,
     omega_grid,
     peak_energy,
-    spectral_function,
-    DysonPeak,
-    midgap,
     shift_peaks,
+    spectral_function,
 )
-from conftest import load_params
 
 
 def test_peak_energy_signs():

@@ -1,14 +1,15 @@
 """prepare: Prepare the json an ci parameters for Dyson orbital calculation"""
 
-from pathlib import Path
-from typing import List
-import typer
 import json
 import os
-from .console import ok, fail
+from pathlib import Path
+from typing import List
+
+import typer
 
 from ..io.orca_output import build_parameters, parse_orca_output
 from ..io.params import parse_parameters
+from .console import fail, ok
 
 NAME = "prepare"
 
@@ -40,7 +41,7 @@ def run(
         False, "--all-initial-roots", help="Every root of every block as a reference."
     ),
 ):
-    """Build the parameters file (v3) from ORCA outputs (CI vectors, energies, active space)."""
+    """Build the parameters file from ORCA outputs (CI vectors, energies, active space)."""
     pairs = []
     for item in final:
         out_file, _, json_file = item.partition(":")

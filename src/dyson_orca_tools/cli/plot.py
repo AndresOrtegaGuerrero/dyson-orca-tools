@@ -1,7 +1,8 @@
-import typer
 from pathlib import Path
-from .console import plot_or_warn
 
+import typer
+
+from .console import plot_or_warn
 
 NAME = "plot"
 

@@ -13,9 +13,9 @@ v2 layout::
 v1 (``final`` is a dict with ``spin_ci``) is wrapped into one run with one root.
 """
 
+import json
 from dataclasses import dataclass
 from pathlib import Path
-import json
 
 
 @dataclass

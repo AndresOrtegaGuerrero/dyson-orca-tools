@@ -2,34 +2,35 @@
 
 from dataclasses import dataclass
 from pathlib import Path
+
 import numpy as np
 
-from ..io.orca_output import (
-    parse_orca_output,
-    detect_pt2,
-    parse_pt2_energies,
-    parse_qdnevpt2,
-)
 from ..constants import HARTREE_EV
-from ..tdm import TransitionDensity
-from ..excited import nto_info, ndo_info
-from ..mixing import mixing_matrix, overlap_matrix, composition
 from ..dipole import (
     ao_dipole,
     centre_origin,
-    transition_dipole,
-    fragment_contributions,
     fragment_charges,
+    fragment_contributions,
+    transition_dipole,
 )
 from ..ehmap import (
-    ao_to_atom,
-    fragment_of_ao,
-    omega_matrix,
-    metrics,
     active_mo_coefficients,
     active_occupations,
+    ao_to_atom,
+    fragment_of_ao,
+    metrics,
+    omega_matrix,
     orbital_fragment_populations,
 )
+from ..excited import ndo_info, nto_info
+from ..io.orca_output import (
+    detect_pt2,
+    parse_orca_output,
+    parse_pt2_energies,
+    parse_qdnevpt2,
+)
+from ..mixing import composition, mixing_matrix, overlap_matrix
+from ..tdm import TransitionDensity
 
 
 @dataclass
