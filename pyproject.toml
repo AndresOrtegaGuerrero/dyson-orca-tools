@@ -5,6 +5,9 @@ build-backend = "flit_core.buildapi"
 [tool.flit.module]
 name = "dyson_orca_tools"
 
+[tool.ruff.lint]
+extend-select = ["I"]
+
 [project]
 name = "dyson_orca_tools"
 dynamic = ["version", "description"]
