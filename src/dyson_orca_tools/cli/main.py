@@ -1,15 +1,12 @@
 import json
-import os
 import typer
 import numpy as np
 from pathlib import Path
 from typing import List
 
-from ..utils import validate_json_file, sannity_check, parameters_sannity_check
-from ..dyson import Dyson
-from ..io.params import load_parameters, parse_parameters
+from ..utils import validate_json_file, sannity_check
+from ..io.params import load_parameters
 from ..io.orca_output import (
-    build_parameters,
     parse_orca_output,
     detect_pt2,
     parse_pt2_energies,
@@ -59,69 +56,14 @@ from ..io.tables import (
 
 from .console import ok, fail, warn, write_cube_or_warn, plot_or_warn
 from .options import CUBE_POINTS, CUBE_SPACING, CUBE_MARGIN, parse_cube_grid
+from . import dyson, prepare, plot
 
 app = typer.Typer(
     help="Dyson orbitals and multireference spectral functions from ORCA CASCI/CASSCF JSON."
 )
 
-
-@app.command("dyson")
-def compute_dyson_orbital(
-    initial_wfn: Path = typer.Option(
-        ..., "-i", "--initial-wfn", help="JSON of the initial state."
-    ),
-    final_wfn: Path = typer.Option(
-        ..., "-f", "--final-wfn", help="JSON of the final (N±1) state."
-    ),
-    parameters: Path = typer.Option(
-        ..., "-p", "--parameters", help="JSON with the spin CI coefficients."
-    ),
-    output_dir: Path = typer.Option(
-        ".", "-o", "--output-dir", help="Directory for the outputs."
-    ),
-    cube: bool = typer.Option(
-        True, "--cube/--no-cube", help="Write a cube file (needs the [cube] extra)."
-    ),
-    cube_points: str = CUBE_POINTS,
-    cube_spacing: float = CUBE_SPACING,
-    cube_margin: float = CUBE_MARGIN,
-):
-    """Dyson orbital between one initial and one final state."""
-    grid = parse_cube_grid(cube_points, cube_spacing, cube_margin) if cube else None
-    output_dir.mkdir(parents=True, exist_ok=True)
-
-    initial_wfn_data = validate_json_file(initial_wfn, "Initial")
-    final_wfn_data = validate_json_file(final_wfn, "Final")
-    parameters_data = validate_json_file(parameters, "Parameters")
-    ok("Input files are valid JSONs.")
-    sannity_check(initial_wfn_data, final_wfn_data)
-    parameters_sannity_check(parameters_data)
-    ok("Inputs passed sanity checks.")
-
-    typer.secho("🔄 Computing Dyson orbital...", fg=typer.colors.BLUE)
-    dyson = Dyson(initial_wfn_data, final_wfn_data, parameters_data)
-    if dyson.calculation_is_casci():
-        typer.echo("   orbital sets: CASCI (same MOs)")
-    else:
-        typer.echo(
-            f"   orbital sets: CASSCF (non-orthogonal MOs, core det = {np.linalg.det(dyson.core_overlap):.6f})"
-        )
-
-    dyson_ao = dyson.dyson_orbital()
-    typer.secho(
-        f"   strength <ϱ|ϱ> = {dyson.strength(dyson_ao):.6f}", fg=typer.colors.CYAN
-    )
-
-    np.savetxt(
-        output_dir / "dyson_orbital_ao.txt",
-        dyson_ao,
-        header="Dyson orbital, AO coefficients (ORCA order)",
-    )
-    if cube and write_cube_or_warn(
-        initial_wfn_data, dyson_ao, output_dir / "dyson_orbital.cube", grid
-    ):
-        ok(f"cube written: {output_dir / 'dyson_orbital.cube'}")
-    typer.secho("🚀 Dyson orbital computed successfully!", fg=typer.colors.CYAN)
+for module in (dyson, prepare, plot):
+    app.command(module.NAME)(module.run)
 
 
 @app.command("spectrum")
@@ -379,108 +321,6 @@ def _parse_state_spec(spec: str) -> tuple[int, int]:
         return int(mult), int(root)
     except ValueError:
         raise ValueError(f"--initial-state '{spec}': expected MULT:ROOT, e.g. 1:0")
-
-
-@app.command("prepare")
-def prepare_parameters(
-    initial_out: Path = typer.Option(
-        ...,
-        "-i",
-        "--initial-out",
-        help="ORCA output of the initial state (PrintWF det).",
-    ),
-    final: List[str] = typer.Option(
-        ...,
-        "-f",
-        "--final",
-        help="ORCA output of one N±1 calculation, repeatable. "
-        "Its orca_2json file is <name>.json next to it, or give 'run.out:file.json'.",
-    ),
-    output: Path = typer.Option(
-        "params.json", "-o", "--output", help="Parameters file to write."
-    ),
-    initial_state: List[str] = typer.Option(
-        None,
-        "--initial-state",
-        help="Reference state as MULT:ROOT, repeatable (e.g. 1:0 3:0). "
-        "Default: the lowest-energy root of the output.",
-    ),
-    all_initial_roots: bool = typer.Option(
-        False, "--all-initial-roots", help="Every root of every block as a reference."
-    ),
-):
-    """Build the parameters file (v3) from ORCA outputs (CI vectors, energies, active space)."""
-    pairs = []
-    for item in final:
-        out_file, _, json_file = item.partition(":")
-        out_file = Path(out_file)
-        pairs.append(
-            (out_file, Path(json_file) if json_file else out_file.with_suffix(".json"))
-        )
-    try:
-        cas = parse_orca_output(initial_out)
-        if all_initial_roots:
-            states = [(r.mult, r.index) for r in cas.roots]
-        else:
-            states = [_parse_state_spec(s) for s in initial_state or []]
-
-        raw = build_parameters(cas, pairs, states)
-        params = parse_parameters(raw)  # validates before writing
-    except (ValueError, FileNotFoundError) as exc:
-        fail(str(exc))
-
-    for run in raw["parameters"]["final"]:  # paths relative to the parameters file
-        run["file"] = os.path.relpath(
-            Path(run["file"]).resolve(), output.resolve().parent
-        )
-    with open(output, "w") as f:
-        json.dump(raw, f, indent=2)
-    for ini in params.initials:
-        ok(
-            f"initial {ini.label}: CAS({ini.nelc},{ini.norb}) mult {ini.mult}, "
-            f"E = {ini.energy} Eh, {len(ini.spin_ci)} determinants"
-        )
-    for run in params.runs:
-        norm = [sum(c * c for c in r.spin_ci.values()) for r in run.roots]
-        typer.echo(
-            f"   final {run.file}: mult {run.mult}, {len(run.roots)} root(s), "
-            f"Σc² = {', '.join(f'{n:.3f}' for n in norm)}"
-        )
-    ok(f"written {output}")
-
-
-@app.command("plot")
-def plot_outputs(
-    output_dir: Path = typer.Option(
-        ".",
-        "-o",
-        "--output-dir",
-        help="Folder with dyson_peaks.csv and spectral_function.dat.",
-    ),
-    title: str = typer.Option(
-        None, "--title", help="Optional title, e.g. 'pentacene CASCI(12,12)'."
-    ),
-    vertical: bool = typer.Option(
-        False, "--vertical", help="Energy on the y axis (as in the paper's figures)."
-    ),
-    legend_outside: bool = typer.Option(
-        False, "--legend-outside", help="Place the legend outside the axes."
-    ),
-    label_threshold: float = typer.Option(
-        0.0,
-        "--label-threshold",
-        help="Label only peaks with strength >= this (curves keep all roots).",
-    ),
-    label_energy: bool = typer.Option(
-        False,
-        "--label-energy",
-        help="Append ω (eV, relative to the chosen zero) to each peak label.",
-    ),
-):
-    """Re-plot a spectrum from the files written by `spectrum` (no recomputation)."""
-    plot_or_warn(
-        output_dir, title, vertical, legend_outside, label_threshold, label_energy
-    )
 
 
 @app.command("ehmap")
