@@ -6,7 +6,7 @@ from .options import CUBE_POINTS, CUBE_SPACING, CUBE_MARGIN, parse_cube_grid
 from ..io.params import load_parameters
 from ..workflows.spectrum import SpectrumOptions, run_spectrum
 from .console import cli_errors, ok, warn, plot_or_warn, write_cube_or_warn
-from ..utils import validate_json_file, sannity_check
+from ..utils import validate_json_file, sanity_check
 from ..io.tables import write_peaks_csv, write_composition_csv
 import numpy as np
 
@@ -114,11 +114,11 @@ def run(
     )
     output_dir.mkdir(parents=True, exist_ok=True)
 
-    initial = validate_json_file(initial_wfn, "Initial")
     with cli_errors():
+        initial = validate_json_file(initial_wfn, "Initial")
         params = load_parameters(parameters)
-    for run_ in params.runs:
-        sannity_check(initial, run_.data)
+        for run_ in params.runs:
+            sanity_check(initial, run_.data)
     ok(
         f"Loaded {len(params.initials)} reference state(s), {len(params.runs)} final run(s), "
         f"{sum(len(r.roots) for r in params.runs)} root(s)."

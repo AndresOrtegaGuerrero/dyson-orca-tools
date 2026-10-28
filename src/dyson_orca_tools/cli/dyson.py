@@ -4,9 +4,9 @@ from pathlib import Path
 import numpy as np
 import typer
 
-from ..utils import validate_json_file, sannity_check, parameters_sannity_check
+from ..utils import validate_json_file, sanity_check, parameters_sanity_check
 from ..dyson import Dyson
-from .console import ok, write_cube_or_warn
+from .console import cli_errors, ok, write_cube_or_warn
 from .options import CUBE_POINTS, CUBE_SPACING, CUBE_MARGIN, parse_cube_grid
 
 NAME = "dyson"
@@ -36,12 +36,13 @@ def run(
     grid = parse_cube_grid(cube_points, cube_spacing, cube_margin) if cube else None
     output_dir.mkdir(parents=True, exist_ok=True)
 
-    initial_wfn_data = validate_json_file(initial_wfn, "Initial")
-    final_wfn_data = validate_json_file(final_wfn, "Final")
-    parameters_data = validate_json_file(parameters, "Parameters")
-    ok("Input files are valid JSONs.")
-    sannity_check(initial_wfn_data, final_wfn_data)
-    parameters_sannity_check(parameters_data)
+    with cli_errors():
+        initial_wfn_data = validate_json_file(initial_wfn, "Initial")
+        final_wfn_data = validate_json_file(final_wfn, "Final")
+        parameters_data = validate_json_file(parameters, "Parameters")
+        ok("Input files are valid JSONs.")
+        sanity_check(initial_wfn_data, final_wfn_data)
+        parameters_sanity_check(parameters_data)
     ok("Inputs passed sanity checks.")
 
     typer.secho("🔄 Computing Dyson orbital...", fg=typer.colors.BLUE)

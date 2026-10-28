@@ -11,8 +11,9 @@ import numpy as np
 
 from .dyson import Dyson
 from .io.params import Parameters
-
-HARTREE_EV = 27.211386245988
+from .constants import (
+    HARTREE_EV,
+)  # re-exported: workflows and tests import it from here
 
 
 @dataclass

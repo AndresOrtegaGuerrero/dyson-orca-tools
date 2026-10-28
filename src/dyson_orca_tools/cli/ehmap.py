@@ -15,6 +15,7 @@ from ..workflows.ehmap import (
 )
 from .console import cli_errors, ok, warn
 from ..utils import validate_json_file
+from ..constants import HARTREE_EV
 from ..io.tables import (
     write_omega_csv,
     write_dipole_csv,
@@ -97,11 +98,11 @@ def run(
         mult=mult, qd=qd, mixing=mixing, dipole=dipole, orbitals=orbitals, ncubes=cubes
     )
     output_dir.mkdir(parents=True, exist_ok=True)
-    state = validate_json_file(wfn, "Wavefunction")
-    labels, groups = load_fragments(fragments, state)
     pair_list = None if all_pairs else [tuple(map(int, p.split(":"))) for p in pair]
 
     with cli_errors():
+        state = validate_json_file(wfn, "Wavefunction")
+        labels, groups = load_fragments(fragments, state)
         result = run_ehmap(orca_out, state, labels, groups, pair_list, opts)
     sys = result.system
     if sys.mult_note:
@@ -184,7 +185,7 @@ def _report_mixing(mx: MixingAnalysis, output_dir: Path, mult: int):
     )
     for K, comp in enumerate(mx.composition):
         typer.echo(
-            f"   QD root {K} ({(mx.e[K] - mx.e[0]) * 27.2114:.3f} eV) = "
+            f"   QD root {K} ({(mx.e[K] - mx.e[0]) * HARTREE_EV:.3f} eV) = "
             + " + ".join(f"{w:.2f}·CAS{J}" for J, w in comp)
         )
     if mx.inconsistent:
